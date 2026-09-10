@@ -1,62 +1,65 @@
-"""
-Quick batch runner — tests every image in this folder through extract_text()
-and check_compliance(), prints a summary table + full details.
-
-Run: python3 batch_test.py
-"""
-
 import os
-import sys
 import glob
-import json
-
 from extract import extract_text
-from rule_engine import check_compliance
 
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
+# Gracefully mock rule_engine if Role 1's code isn't present
+try:
+    from rule_engine import check_compliance
+except ImportError:
+    def check_compliance(text):
+        return {"status": "mocked", "message": "Rule engine not integrated"}
 
-def main():
-    folder = os.path.dirname(os.path.abspath(__file__))
-    images = []
+IMAGE_EXTENSIONS = ('*.jpg', '*.jpeg', '*.JPG', '*.JPEG', '*.png', '*.PNG')
+
+def run_batch_test():
+    image_files = []
     for ext in IMAGE_EXTENSIONS:
-        images.extend(glob.glob(os.path.join(folder, f"*{ext}")))
-    images = sorted(set(images))
-
-    if not images:
-        print("No images found in this folder.")
-        return
-
-    print(f"Found {len(images)} image(s): {[os.path.basename(i) for i in images]}\n")
-    print("=" * 70)
+        image_files.extend(glob.glob(ext))
+    
+    image_files = sorted(list(set(image_files)))
+    print(f"Found {len(image_files)} image(s): {image_files}\n")
 
     summary = []
 
-    for path in images:
-        name = os.path.basename(path)
-        print(f"\n### {name} ###")
-        try:
-            text = extract_text(path)
-            result = check_compliance(text)
-            print("--- OCR TEXT ---")
-            print(text if text.strip() else "(nothing detected)")
-            print("\n--- COMPLIANCE RESULT ---")
-            print(json.dumps(result, indent=2))
-            summary.append({
-                "file": name,
-                "status": result["overall_status"],
-                "passed": f"{result['passed_count']}/{result['total_checks']}",
-                "needs_review": result["needs_human_review"],
-                "ocr_char_count": len(text.strip()),
-            })
-        except Exception as e:
-            print(f"ERROR: {e}")
-            summary.append({"file": name, "status": "ERROR", "error": str(e)})
+    for img_path in image_files:
         print("=" * 70)
+        print(f"### {img_path} ###")
+        
+        # Call with return_dict=True to access diagnostics
+        res = extract_text(img_path, return_dict=True)
+        
+        # Handle backward compatibility if plain string was returned
+        if isinstance(res, dict):
+            text = res.get("text", "")
+            status = res.get("status", "unknown")
+            conf = res.get("confidence", 0.0)
+            chars = res.get("char_count", len(text))
+        else:
+            text = str(res)
+            chars = len(text)
+            status = "recapture_needed" if chars < 30 else "success"
+            conf = 0.0
 
-    print("\n\n########## SUMMARY ##########")
-    for row in summary:
-        print(row)
+        summary.append({
+            "file": img_path,
+            "chars": chars,
+            "status": status,
+            "conf": conf
+        })
 
+        print("--- OCR OUTPUT PREVIEW ---")
+        preview = text[:250].replace('\n', ' ')
+        print(preview if preview else "[NO READABLE TEXT FOUND]")
+        print(f"\n[Status: {status} | Chars: {chars} | Conf: {conf}%]")
+
+    # Print Final Summary
+    print("\n" + "=" * 70)
+    print("SUMMARY")
+    print("=" * 70)
+    print(f"{'Filename':<22} | {'Chars':<7} | {'Status':<18} | {'Conf'}")
+    print("-" * 70)
+    for item in summary:
+        print(f"{item['file']:<22} | {item['chars']:<7} | {item['status']:<18} | {item['conf']}%")
 
 if __name__ == "__main__":
-    main()
+    run_batch_test()
