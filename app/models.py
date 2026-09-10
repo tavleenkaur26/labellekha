@@ -22,13 +22,16 @@ class Scan(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    image_path = Column(String, nullable=False)  # where the uploaded image is stored
-    status = Column(String, nullable=False, default="pending")  # pending / recapture_needed / processing / done
+    image_path = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="pending")
     consent_given = Column(Boolean, nullable=False, default=False)
-    coarse_location = Column(String, nullable=True)  # e.g. "Delhi" or a pincode, never GPS coords
+    coarse_location = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # one scan belongs to one user, and has many clause results
+    # NEW — overall compliance result from Role 1
+    overall_status = Column(String, nullable=True)       # "compliant" / "non-compliant"
+    needs_human_review = Column(Boolean, nullable=True)
+
     owner = relationship("User", back_populates="scans")
     results = relationship("ScanResult", back_populates="scan")
 
@@ -38,10 +41,12 @@ class ScanResult(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     scan_id = Column(Integer, ForeignKey("scans.id"), nullable=False)
-    clause = Column(String, nullable=False)  # e.g. "6(1)(a)", "6(2)"
-    extracted_text = Column(String, nullable=True)  # exact text OCR pulled for this clause
-    pass_fail = Column(Boolean, nullable=True)  # True=pass, False=fail, None=not yet checked
-    confidence = Column(Float, nullable=True)  # OCR/rule-engine confidence score
-    needs_review = Column(Boolean, nullable=False, default=False)  # flagged for human review
+    clause = Column(String, nullable=False)
+    title = Column(String, nullable=True)          # NEW
+    extracted_text = Column(String, nullable=True)  # this stores "evidence" now
+    pass_fail = Column(Boolean, nullable=True)
+    confidence = Column(String, nullable=True)       # CHANGED: was Float, now String ("high"/"low"/"not_evaluated")
+    note = Column(String, nullable=True)             # NEW
+    needs_review = Column(Boolean, nullable=False, default=False)
 
     scan = relationship("Scan", back_populates="results")

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import Scan
 from app.schemas import ScanCreateResponse
+from app.models import Scan, ScanResult
 
 router = APIRouter()
 
@@ -44,33 +45,47 @@ def create_scan(
     db.commit()
     db.refresh(new_scan)
 
-    # --- Role 2's OCR pipeline ---
+        # --- Role 2's OCR pipeline ---
     from OCR.extract import extract_text
-    
-    result = extract_text(image_path, return_dict=True)
 
-    if result["recapture_needed"]:
+    ocr_result = extract_text(image_path, return_dict=True)
+
+    if ocr_result["recapture_needed"]:
         new_scan.status = "recapture_needed"
         db.commit()
         return ScanCreateResponse(
             scan_id=new_scan.id,
             status="recapture_needed",
-            message=result["message"],
+            message=ocr_result["message"],
         )
 
-    # --- Role 1's rule engine (placeholder until they confirm function signature) ---
-    extracted_text = result["text"]
+    # --- Role 1's rule engine ---
+    from rule_engine.rule_engine import check_compliance
 
-    # TODO: replace this stub once Role 1 shares their check_compliance() signature
-    # from rules import check_compliance
-    # clause_results = check_compliance(extracted_text)
-    # for each result in clause_results: create a ScanResult row here
+    compliance_result = check_compliance(ocr_result["text"], ocr_metadata=ocr_result)
 
-    new_scan.status = "done"  # TEMP: will become "done" only after Role 1's step actually runs
+    # Save each clause check as a ScanResult row
+    for check in compliance_result["checks"]:
+        scan_result = ScanResult(
+            scan_id=new_scan.id,
+            clause=check["clause"],
+            title=check.get("title"),
+            extracted_text=check.get("evidence"),
+            pass_fail=check["pass"],
+            confidence=check.get("confidence"),
+            note=check.get("note"),
+            needs_review=(check.get("confidence") == "low"),
+        )
+        db.add(scan_result)
+
+    # Save overall scan-level result
+    new_scan.status = "done"
+    new_scan.overall_status = compliance_result["overall_status"]
+    new_scan.needs_human_review = compliance_result["needs_human_review"]
     db.commit()
 
     return ScanCreateResponse(
         scan_id=new_scan.id,
         status=new_scan.status,
-        message="OCR complete, awaiting rule engine integration",
+        message=f"Compliance check complete: {compliance_result['overall_status']}",
     )
