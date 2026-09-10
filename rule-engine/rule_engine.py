@@ -128,7 +128,7 @@ def check_consumer_care(text: str) -> dict:
     keyword — NOT just the word 'contact' appearing anywhere (this was
     matching unrelated safety/caution text on real labels, e.g. 'accidental
     contact with eyes' — flagged by Role 2's real-photo testing)."""
-    care_keyword = r"(Customer\s?Care|Consumer\s?Care|Toll[\s-]?Free|Helpline|Care\s?Line|For\s?Complaints?)"
+    care_keyword = r"(Customer\s?Care|Consumer\s?Care|Toll[\s-]?Free|Helpline|Care\s?Line|For\s?Complaints?|Tel\.?)"
     phone_pattern = r"(?:\+?91[\s-]?)?\d{10}|\d{4}[\s-]\d{3}[\s-]\d{4}"
     email_pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
@@ -145,7 +145,13 @@ def check_consumer_care(text: str) -> dict:
         window_phone = re.search(phone_pattern, window)
         window_email = re.search(email_pattern, window)
         if window_phone or window_email:
-            evidence = window.strip().replace("\n", " ")
+            # Trim evidence to end right after the matched phone/email,
+            # not the full 80-char window (avoids trailing unrelated text)
+            end_pos = max(
+                window_phone.end() if window_phone else 0,
+                window_email.end() if window_email else 0,
+            )
+            evidence = window[:end_pos].strip().replace("\n", " ")
             passed = True
 
     # Fallback: even without the keyword, a standalone email/phone near
