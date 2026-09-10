@@ -4,6 +4,16 @@ import numpy as np
 import re
 from typing import Dict, Any, Union
 
+COMMON_METROLOGY_WORDS = {
+    "mrp", "rs", "net", "qty", "quantity", "mfd", "batch", "pkd", "use",
+    "before", "date", "exp", "expiry", "care", "consumer", "customer", "email",
+    "phone", "tel", "ltd", "pvt", "limited", "products", "road", "street",
+    "mumbai", "delhi", "india", "regd", "office", "lic", "fssai", "weight",
+    "ingredients", "nutrition", "energy", "fat", "sugar", "protein", "carbohydrate",
+    "free", "gm", "ml", "kg", "grams", "milliliters", "inclusive", "taxes",
+    "parle", "nestle", "haldiram", "cell", "crossing", "vile"
+}
+
 def auto_rotate(img: np.ndarray) -> np.ndarray:
     """Detect text orientation using Tesseract OSD and rotate upright."""
     try:
@@ -24,51 +34,52 @@ def auto_rotate(img: np.ndarray) -> np.ndarray:
         pass
     return img
 
+def preprocess_image(img: np.ndarray) -> np.ndarray:
+    """Converts to grayscale, resizes if overly large, and applies CLAHE for contrast."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    h, w = gray.shape
+    if max(h, w) > 2200:
+        scale = 2200 / max(h, w)
+        gray = cv2.resize(gray, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    return enhanced
+
 def clean_ocr_text(raw_text: str) -> str:
-    """
-    Cleans OCR artifacts, normalizes currencies/units, and strips garbage lines
-    specifically for Legal Metrology Packaged Commodities (Rule 6) clauses.
-    """
+    """Normalizes common Legal Metrology OCR misreads and cleans non-text artifacts."""
     if not raw_text:
         return ""
 
     text = raw_text
 
-    # 1. Standardize MRP & fix OCR misreads of 'Rs.' / rupee symbols
+    # Standardize metrology keywords
     text = re.sub(r'\bM[\.\s]*A[\.\s]*P\b', 'MRP', text, flags=re.IGNORECASE)
     text = re.sub(r'\bM\s*R\s*P\b', 'MRP', text, flags=re.IGNORECASE)
-    # Convert 'MRP <', 'MRP :', 'MRP =' to standard 'MRP Rs.'
     text = re.sub(r'\bMRP\s*[:<=]\s*', 'MRP Rs. ', text, flags=re.IGNORECASE)
     text = re.sub(r'\bRs\s*[\.:]\s*', 'Rs. ', text, flags=re.IGNORECASE)
-    # Fix dot-matrix decimal slips (e.g., '50. D.00' -> '50.00')
-    text = re.sub(r'(\d+)\.\s*[A-Za-z]\.(\d+)', r'\1.\2', text)
 
-    # 2. Normalize Net Quantity & Units
+    # Unit normalizations
     text = re.sub(r'\bN\s*e\s*t\b', 'Net', text, flags=re.IGNORECASE)
     text = re.sub(r'\bQ\s*t\s*y\b', 'Qty', text, flags=re.IGNORECASE)
     text = re.sub(r'(\d+)\s*g\s*m\b', r'\1 gm', text, flags=re.IGNORECASE)
     text = re.sub(r'(\d+)\s*m\s*l\b', r'\1 ml', text, flags=re.IGNORECASE)
     text = re.sub(r'(\d+)\s*k\s*g\b', r'\1 kg', text, flags=re.IGNORECASE)
 
-    # 3. Clean Consumer Care, Phone, and Email headers
-    # Strips misread garbage prefixes like 'tee.' or stray punctuation after 'PHONE NO:'
+    # Consumer care & contact prefixes
     text = re.sub(r'\bPHONE\s*(?:NO|NUMBER)?\s*[:\.-]?\s*(?:[a-zA-Z]{1,3}\.?)?\s*', 'PHONE NO: ', text, flags=re.IGNORECASE)
     text = re.sub(r'\bE[-\s]?mail\s*[:\.-]?\s*', 'Email: ', text, flags=re.IGNORECASE)
 
-    # 4. Clean dot-matrix and stray OCR lines
+    # Line-level filtering
     lines = text.split('\n')
     cleaned_lines = []
     for line in lines:
         stripped = line.strip()
-        # Drop lines shorter than 3 chars
         if len(stripped) < 3:
             continue
-        # Drop lines with mostly punctuation or random stray fragments (e.g., '8 lJ 17 1\'', 'ws ow aci T')
         alpha_count = sum(c.isalnum() for c in stripped)
-        if alpha_count / len(stripped) < 0.5:
-            continue
-        # Drop short non-alphanumeric lowercase noise
-        if len(stripped.split()) <= 4 and all(len(w) <= 2 for w in stripped.split()):
+        if alpha_count / len(stripped) < 0.4:
             continue
         cleaned_lines.append(stripped)
 
@@ -76,7 +87,7 @@ def clean_ocr_text(raw_text: str) -> str:
     return re.sub(r'[ \t]+', ' ', normalized)
 
 def compute_font_heuristics(font_metadata: list, img_height: int) -> Dict[str, Any]:
-    """Computes approximate font-size metrics relative to package dimensions."""
+    """Calculates approximate font height metrics relative to image dimensions."""
     if not font_metadata or img_height <= 0:
         return {
             "avg_font_px": 0.0,
@@ -108,7 +119,46 @@ def compute_font_heuristics(font_metadata: list, img_height: int) -> Dict[str, A
         "note": "Approximate uncalibrated font size heuristic"
     }
 
+def evaluate_quality(text: str, avg_conf: float, words_list: list) -> tuple:
+    """
+    Checks if extracted text contains sufficient genuine language data.
+    Returns (is_recapture_needed, reason, word_ratio).
+    """
+    if len(text.strip()) < 30:
+        return True, "Sparse text detected (< 30 characters).", 0.0
+
+    if not words_list:
+        return True, "No recognizable words detected.", 0.0
+
+    valid_word_count = 0
+    clean_tokens = [re.sub(r'[^a-zA-Z]', '', w.lower()) for w in words_list]
+    clean_tokens = [w for w in clean_tokens if len(w) >= 2]
+
+    if not clean_tokens:
+        return True, "No alphabetic word tokens found.", 0.0
+
+    for token in clean_tokens:
+        if token in COMMON_METROLOGY_WORDS or len(token) >= 4:
+            valid_word_count += 1
+
+    word_ratio = round(valid_word_count / len(clean_tokens), 2)
+
+    # Floor for unreadable noisy captures
+    if avg_conf < 35.0:
+        return True, f"Low OCR confidence ({avg_conf}%).", word_ratio
+
+    # Catch borderline scans with high proportion of garbage tokens
+    if avg_conf < 50.0 and word_ratio < 0.30:
+        return True, f"Low quality text: {int(word_ratio*100)}% valid words at {avg_conf}% confidence.", word_ratio
+
+    return False, "Quality acceptable.", word_ratio
+
 def extract_text(image_input: Union[str, np.ndarray], return_dict: bool = False) -> Union[str, Dict[str, Any]]:
+    """
+    Main extraction interface.
+    Returns plain string if return_dict=False (compatible with standard rule engine calls).
+    Returns structured dictionary if return_dict=True.
+    """
     if isinstance(image_input, str):
         img = cv2.imread(image_input)
     else:
@@ -130,20 +180,24 @@ def extract_text(image_input: Union[str, np.ndarray], return_dict: bool = False)
     img_h, img_w = img.shape[:2]
 
     # 1. Orientation correction
-    img = auto_rotate(img)
+    img_upright = auto_rotate(img)
 
-    # 2. OCR configuration
+    # 2. Glare reduction & edge contrast
+    processed_gray = preprocess_image(img_upright)
+
+    # 3. OCR extraction
     custom_config = r'--oem 3 --psm 3'
-    raw_extracted_text = pytesseract.image_to_string(img, config=custom_config)
-    
-    # 3. Clean and normalize text
+    raw_extracted_text = pytesseract.image_to_string(processed_gray, config=custom_config)
+
+    # 4. Clean text
     cleaned_text = clean_ocr_text(raw_extracted_text)
 
-    # 4. Bounding box & confidence data
-    data = pytesseract.image_to_data(img, config=custom_config, output_type=pytesseract.Output.DICT)
-    
+    # 5. Extract bounding boxes and confidences
+    data = pytesseract.image_to_data(processed_gray, config=custom_config, output_type=pytesseract.Output.DICT)
+
     font_metadata = []
     valid_confidences = []
+    detected_words = []
 
     for i in range(len(data['text'])):
         word = data['text'][i].strip()
@@ -153,6 +207,7 @@ def extract_text(image_input: Union[str, np.ndarray], return_dict: bool = False)
 
         if word and conf > 0 and h > 2:
             valid_confidences.append(conf)
+            detected_words.append(word)
             font_metadata.append({
                 "word": word,
                 "confidence": conf,
@@ -167,20 +222,20 @@ def extract_text(image_input: Union[str, np.ndarray], return_dict: bool = False)
     avg_confidence = round(float(np.mean(valid_confidences)), 2) if valid_confidences else 0.0
     char_count = len(cleaned_text)
 
-    # 5. Check quality threshold
-    recapture = char_count < 30 or avg_confidence < 30.0
+    # 6. Quality assessment
+    recapture, reason, word_ratio = evaluate_quality(cleaned_text, avg_confidence, detected_words)
     status = "recapture_needed" if recapture else "success"
-    message = "Recapture needed: blurry or sparse text." if recapture else "Text extracted and normalized successfully."
 
-    # 6. Compute font size statistics
+    # 7. Font size heuristic computation
     font_stats = compute_font_heuristics(font_metadata, img_h)
 
     result = {
         "status": status,
         "text": cleaned_text,
-        "message": message,
+        "message": reason if recapture else "Text extracted and normalized successfully.",
         "char_count": char_count,
         "confidence": avg_confidence,
+        "valid_word_ratio": word_ratio,
         "recapture_needed": recapture,
         "font_stats": font_stats,
         "font_metadata": font_metadata
@@ -195,7 +250,8 @@ if __name__ == "__main__":
     test_img = sys.argv[1] if len(sys.argv) > 1 else "melody.JPG"
     output = extract_text(test_img, return_dict=True)
     print(f"Status: {output['status']}")
-    print(f"Confidence: {output['confidence']}%")
+    print(f"Confidence: {output['confidence']}% | Word Ratio: {output.get('valid_word_ratio', 0)}")
+    print(f"Message: {output['message']}")
     print(f"Font Stats: {output['font_stats']}")
     print("-" * 50)
-    print(output['text'])
+    print(output['text'][:300])
