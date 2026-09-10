@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
+import re
+from pydantic import BaseModel, field_validator
 
 
 class ScanCreateResponse(BaseModel):
@@ -49,3 +51,20 @@ class UserOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+class ScanCreateRequest(BaseModel):
+    consent_given: bool
+    coarse_location: Optional[str] = None
+
+    @field_validator("coarse_location")
+    @classmethod
+    def reject_precise_coordinates(cls, v):
+        if v is None:
+            return v
+        # Reject anything that looks like lat,long GPS coordinates
+        gps_pattern = r"^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$"
+        if re.match(gps_pattern, v.strip()):
+            raise ValueError(
+                "coarse_location must be a locality/city/pincode, not GPS coordinates"
+            )
+        return v

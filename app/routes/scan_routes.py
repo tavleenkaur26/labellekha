@@ -1,6 +1,7 @@
 import shutil
 import os
-from fastapi import APIRouter, UploadFile, File, Form, Depends
+import re
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth import get_db, get_current_user
@@ -15,6 +16,8 @@ router = APIRouter()
 UPLOAD_DIR = "uploaded_images"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+GPS_PATTERN = re.compile(r"^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$")
+
 
 @router.post("/scans", response_model=ScanCreateResponse)
 def create_scan(
@@ -24,6 +27,13 @@ def create_scan(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),  # requires a logged-in user (Step 4)
 ):
+    # 0. Reject raw GPS coordinates before doing anything else (Step 5)
+    if coarse_location and GPS_PATTERN.match(coarse_location.strip()):
+        raise HTTPException(
+            status_code=400,
+            detail="coarse_location must be a locality/city/pincode, not precise GPS coordinates",
+        )
+
     # 1. Save the uploaded image to disk
     image_path = os.path.join(UPLOAD_DIR, image.filename)
     with open(image_path, "wb") as buffer:
@@ -56,7 +66,6 @@ def create_scan(
         )
 
     # 4. --- Role 1's rule engine ---
-    
     spec = importlib.util.spec_from_file_location(
         "rule_engine_module", "rule-engine/rule_engine.py"
     )
