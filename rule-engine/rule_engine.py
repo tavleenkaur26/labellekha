@@ -172,17 +172,36 @@ def check_consumer_care(text: str) -> dict:
     }
 
 
-def check_font_size_placeholder(image_metadata: dict | None = None) -> dict:
-    """Rule 7 — placeholder only. Real implementation needs pixel-height
-    measurement from Role 2, which needs a reference object or calibration.
-    Always returns 'not evaluated' honestly rather than faking a result."""
+def check_font_size(font_stats: dict | None = None) -> dict:
+    """Rule 7 — letter height requirements (Table I/II).
+    Uses Role 2's font_stats (from extract_text with return_dict=True),
+    specifically estimated_mm — an approximate, UNCALIBRATED estimate,
+    not a certified physical measurement. Always flagged low-confidence
+    and never presented as legally definitive."""
+    if not font_stats or font_stats.get("estimated_mm", 0) <= 0:
+        return {
+            "clause": "Rule 7",
+            "title": "Letter Height / Font Size Requirement",
+            "pass": None,
+            "evidence": None,
+            "confidence": "not_evaluated",
+            "note": "No font data available from OCR pipeline.",
+        }
+
+    estimated_mm = font_stats["estimated_mm"]
+    # Rule 7 Table I minimum for the most common case (up to 200g/ml): 1mm normal print
+    # This is a simplified threshold — real implementation should select the
+    # correct table row based on declared net quantity, not a flat 1mm minimum
+    MIN_MM_THRESHOLD = 1.0
+    likely_pass = estimated_mm >= MIN_MM_THRESHOLD
+
     return {
         "clause": "Rule 7",
         "title": "Letter Height / Font Size Requirement",
-        "pass": None,  # None = "not evaluated", NOT a pass or fail
-        "evidence": None,
-        "confidence": "not_evaluated",
-        "note": "Approximate/heuristic check pending Role 2 — not faked as pass/fail.",
+        "pass": likely_pass,
+        "evidence": f"Estimated letter height: {estimated_mm}mm (uncalibrated approximation)",
+        "confidence": "low",  # ALWAYS low — this is never a certified measurement
+        "note": "Approximate estimate only, not calibrated against a reference object. Needs human verification before any enforcement action.",
     }
 
 
@@ -190,10 +209,14 @@ def check_font_size_placeholder(image_metadata: dict | None = None) -> dict:
 # MAIN ENTRY POINT — this is what Role 2 (OCR) and Role 4 (backend) call
 # ---------------------------------------------------------------------------
 
-def check_compliance(extracted_text: str) -> dict:
+def check_compliance(extracted_text: str, ocr_metadata: dict | None = None) -> dict:
     """
     Takes raw OCR-extracted text, runs it through all clause checks,
-    returns a full compliance result. This is your CONTRACT with the team.
+    returns a full compliance result.
+
+    ocr_metadata (optional): pass Role 2's full return_dict=True output
+    here to enable the font-size check and factor in their own
+    recapture_needed quality flag.
     """
     checks = [
         check_manufacturer(extracted_text),
@@ -202,16 +225,19 @@ def check_compliance(extracted_text: str) -> dict:
         check_mfg_date(extracted_text),
         check_mrp(extracted_text),
         check_consumer_care(extracted_text),
-        check_font_size_placeholder(),
+        check_font_size(ocr_metadata.get("font_stats") if ocr_metadata else None),
     ]
 
-    # Only count checks that were actually evaluated (skip font-size placeholder)
     scored_checks = [c for c in checks if c["pass"] is not None]
     passed = sum(1 for c in scored_checks if c["pass"])
     total = len(scored_checks)
 
-    # Flag for human review if any check has low confidence, even if it "passed"
     needs_review = any(c["confidence"] == "low" for c in scored_checks)
+    # Also honor Role 2's own quality flag — if THEY think the photo was
+    # too blurry/sparse to trust, we should too, regardless of what our
+    # regex happened to match
+    if ocr_metadata and ocr_metadata.get("recapture_needed"):
+        needs_review = True
 
     overall_status = "compliant" if passed == total else "non-compliant"
 
@@ -220,6 +246,7 @@ def check_compliance(extracted_text: str) -> dict:
         "passed_count": passed,
         "total_checks": total,
         "needs_human_review": needs_review,
+        "ocr_quality_flag": ocr_metadata.get("status") if ocr_metadata else None,
         "checks": checks,
     }
 
