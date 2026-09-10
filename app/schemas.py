@@ -28,3 +28,24 @@ class ScanDetailResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: Optional[str] = "user"  # "user" or "inspector"
+
+
+class UserOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+
+    class Config:
+        from_attributes = True
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
