@@ -73,3 +73,13 @@ class ScanCreateRequest(BaseModel):
                 "coarse_location must be a locality/city/pincode, not GPS coordinates"
             )
         return v
+
+class ScanListItem(BaseModel):
+    scan_id: int
+    status: str
+    overall_status: Optional[str]
+    coarse_location: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

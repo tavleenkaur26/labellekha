@@ -14,6 +14,10 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 from fastapi import HTTPException
 from app.schemas import ScanDetailResponse
 
+from typing import List
+from app.schemas import ScanListItem
+
+
 router = APIRouter()
 
 UPLOAD_DIR = "uploaded_images"
@@ -128,3 +132,32 @@ def get_scan(
         created_at=scan.created_at,
         results=scan.results,
     )
+
+
+@router.get("/scans", response_model=List[ScanListItem])
+def list_scans(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role == "inspector":
+        # Inspectors can see everyone's scans
+        scans = db.query(Scan).order_by(Scan.created_at.desc()).all()
+    else:
+        # Regular users only see their own scans
+        scans = (
+            db.query(Scan)
+            .filter(Scan.user_id == current_user.id)
+            .order_by(Scan.created_at.desc())
+            .all()
+        )
+
+    return [
+        ScanListItem(
+            scan_id=scan.id,
+            status=scan.status,
+            overall_status=scan.overall_status,
+            coarse_location=scan.coarse_location,
+            created_at=scan.created_at,
+        )
+        for scan in scans
+    ]
