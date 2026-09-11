@@ -31,6 +31,9 @@ class ScanDetailResponse(BaseModel):
     coarse_location: Optional[str]
     brand: Optional[str]
     category: Optional[str]
+    consent_given: bool
+    passed_count: Optional[int]
+    total_checks: Optional[int]
     created_at: datetime
     results: List[ScanResultOut] = []
 
@@ -55,7 +58,7 @@ class UserCreate(BaseModel):
     name: str
     email: str
     password: str
-    role: Optional[str] = "user"  # "user" or "inspector"
+    role: Optional[str] = "user"
 
 
 class UserOut(BaseModel):

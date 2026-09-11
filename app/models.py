@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, F
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 
 
 class User(Base):
@@ -37,6 +38,9 @@ class Scan(Base):
 
     brand = Column(String, nullable=True)
     category = Column(String, nullable=True)
+
+    passed_count = Column(Integer, nullable=True)
+    total_checks = Column(Integer, nullable=True)
 
 
 class ScanResult(Base):

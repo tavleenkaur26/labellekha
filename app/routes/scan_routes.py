@@ -2,6 +2,7 @@ import shutil
 import os
 import re
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.auth import get_db, get_current_user
@@ -30,7 +31,7 @@ def create_scan(
     brand: str = Form(None),
     category: str = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # requires a logged-in user (Step 4)
+    current_user: User = Depends(get_current_user),
 ):
     # 0. Reject raw GPS coordinates before doing anything else (Step 5)
     if coarse_location and GPS_PATTERN.match(coarse_location.strip()):
@@ -46,7 +47,7 @@ def create_scan(
 
     # 2. Create the scan row first, so we have an ID even if OCR fails
     new_scan = Scan(
-        user_id=current_user.id,  # real logged-in user, no longer hardcoded
+        user_id=current_user.id,
         image_path=image_path,
         status="processing",
         consent_given=consent_given,
@@ -100,6 +101,8 @@ def create_scan(
     new_scan.status = "done"
     new_scan.overall_status = compliance_result["overall_status"]
     new_scan.needs_human_review = compliance_result["needs_human_review"]
+    new_scan.passed_count = compliance_result["passed_count"]
+    new_scan.total_checks = compliance_result["total_checks"]
     db.commit()
 
     return ScanCreateResponse(
@@ -120,7 +123,6 @@ def get_scan(
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
 
-    # Only allow the scan's owner or an inspector to view it
     if scan.user_id != current_user.id and current_user.role != "inspector":
         raise HTTPException(status_code=403, detail="Not authorized to view this scan")
 
@@ -132,9 +134,36 @@ def get_scan(
         coarse_location=scan.coarse_location,
         brand=scan.brand,
         category=scan.category,
+        consent_given=scan.consent_given,
+        passed_count=scan.passed_count,
+        total_checks=scan.total_checks,
         created_at=scan.created_at,
         results=scan.results,
     )
+
+
+@router.get("/scans/{scan_id}/image")
+def get_scan_image(
+    scan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Serves the original uploaded label image for a scan.
+    Used by Role 6 to embed the scanned image in the PDF report.
+    """
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    if scan.user_id != current_user.id and current_user.role != "inspector":
+        raise HTTPException(status_code=403, detail="Not authorized to view this scan")
+
+    if not os.path.exists(scan.image_path):
+        raise HTTPException(status_code=404, detail="Image file not found on server")
+
+    return FileResponse(scan.image_path)
 
 
 @router.get("/scans", response_model=List[ScanListItem])
@@ -143,10 +172,8 @@ def list_scans(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role == "inspector":
-        # Inspectors can see everyone's scans
         scans = db.query(Scan).order_by(Scan.created_at.desc()).all()
     else:
-        # Regular users only see their own scans
         scans = (
             db.query(Scan)
             .filter(Scan.user_id == current_user.id)
