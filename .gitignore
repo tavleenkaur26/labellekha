@@ -1,8 +1,42 @@
+# Python
 venv/
+.venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Node / Frontend
 node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# Environments and Secrets
 .env
-.DS_Store
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.pfx
+*.p12
+*service_account*.json
+*service-account*.json
+*credential*.json
+*secret*.json
+
+# Databases
 compliance.db
+test_*.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads and OS
 uploaded_images/
+.DS_Store
+Thumbs.db
+
+
+

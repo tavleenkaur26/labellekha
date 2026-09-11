@@ -97,7 +97,54 @@ def create_scan(
         )
         db.add(scan_result)
 
-    # 6. Save overall scan-level result
+    # 6. Fallback brand/category inference if not provided in form
+    inferred_brand = new_scan.brand
+    inferred_category = new_scan.category
+
+    text_lower = ocr_result.get("text", "").lower()
+
+    if not inferred_brand:
+        known_brands = [
+            ("Haldiram", ["haldiram", "haldirams"]),
+            ("Nestle", ["nestle", "nestlé"]),
+            ("Maggi", ["maggi"]),
+            ("Parle", ["parle", "parle-g", "melody"]),
+            ("Britannia", ["britannia", "good day"]),
+            ("Lakme", ["lakme", "lakmé"]),
+            ("Dove", ["dove"]),
+            ("Vaseline", ["vaseline"]),
+            ("Veet", ["veet"]),
+            ("Thums Up", ["thums up", "thumsup"]),
+            ("Ferrero Rocher", ["ferrero", "rocher"]),
+            ("Amul", ["amul"]),
+            ("Dabur", ["dabur"]),
+            ("Himalaya", ["himalaya"]),
+            ("Patanjali", ["patanjali"]),
+            ("Cadbury", ["cadbury", "oreo"]),
+            ("Bikaji", ["bikaji"]),
+            ("Tata", ["tata salt", "tata tea", "tata consumer"]),
+        ]
+        for brand_name, triggers in known_brands:
+            if any(trig in text_lower for trig in triggers):
+                inferred_brand = brand_name
+                break
+
+    if not inferred_category:
+        if any(w in text_lower for w in ["biscuit", "noodle", "snack", "bhujia", "namkeen", "chocolate", "sweet", "food", "flour", "atta"]):
+            inferred_category = "Food & Snacks"
+        elif any(w in text_lower for w in ["cosmetic", "serum", "sunscreen", "cream", "lotion", "skin", "hair", "soap", "moistur"]):
+            inferred_category = "Cosmetics & Personal Care"
+        elif any(w in text_lower for w in ["drink", "juice", "beverage", "cola", "soda", "water", "syrup"]):
+            inferred_category = "Beverages"
+        elif any(w in text_lower for w in ["detergent", "cleaner", "wash", "dishwash"]):
+            inferred_category = "Household & Cleaning"
+        elif inferred_brand:
+            inferred_category = "General Packaged Goods"
+
+    new_scan.brand = inferred_brand
+    new_scan.category = inferred_category
+
+    # 7. Save overall scan-level result
     new_scan.status = "done"
     new_scan.overall_status = compliance_result["overall_status"]
     new_scan.needs_human_review = compliance_result["needs_human_review"]
