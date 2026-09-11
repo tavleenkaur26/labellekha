@@ -1,8 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
 import re
-from pydantic import BaseModel, field_validator
 
 
 class ScanCreateResponse(BaseModel):
@@ -30,11 +29,27 @@ class ScanDetailResponse(BaseModel):
     overall_status: Optional[str]
     needs_human_review: Optional[bool]
     coarse_location: Optional[str]
+    brand: Optional[str]
+    category: Optional[str]
     created_at: datetime
     results: List[ScanResultOut] = []
 
     class Config:
         from_attributes = True
+
+
+class ScanListItem(BaseModel):
+    scan_id: int
+    status: str
+    overall_status: Optional[str]
+    coarse_location: Optional[str]
+    brand: Optional[str]
+    category: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 
 class UserCreate(BaseModel):
     name: str
@@ -57,6 +72,7 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+
 class ScanCreateRequest(BaseModel):
     consent_given: bool
     coarse_location: Optional[str] = None
@@ -66,20 +82,9 @@ class ScanCreateRequest(BaseModel):
     def reject_precise_coordinates(cls, v):
         if v is None:
             return v
-        # Reject anything that looks like lat,long GPS coordinates
         gps_pattern = r"^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$"
         if re.match(gps_pattern, v.strip()):
             raise ValueError(
                 "coarse_location must be a locality/city/pincode, not GPS coordinates"
             )
         return v
-
-class ScanListItem(BaseModel):
-    scan_id: int
-    status: str
-    overall_status: Optional[str]
-    coarse_location: Optional[str]
-    created_at: datetime
-
-    class Config:
-        from_attributes = True

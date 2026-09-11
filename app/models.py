@@ -35,6 +35,9 @@ class Scan(Base):
     owner = relationship("User", back_populates="scans")
     results = relationship("ScanResult", back_populates="scan")
 
+    brand = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+
 
 class ScanResult(Base):
     __tablename__ = "scan_results"

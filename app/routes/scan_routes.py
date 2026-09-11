@@ -6,16 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_db, get_current_user
 from app.models import User, Scan, ScanResult
-from app.schemas import ScanCreateResponse
+from app.schemas import ScanCreateResponse, ScanDetailResponse, ScanListItem
 import importlib.util
 import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-from fastapi import HTTPException
-from app.schemas import ScanDetailResponse
-
 from typing import List
-from app.schemas import ScanListItem
 
 
 router = APIRouter()
@@ -31,6 +27,8 @@ def create_scan(
     image: UploadFile = File(...),
     consent_given: bool = Form(...),
     coarse_location: str = Form(None),
+    brand: str = Form(None),
+    category: str = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),  # requires a logged-in user (Step 4)
 ):
@@ -53,6 +51,8 @@ def create_scan(
         status="processing",
         consent_given=consent_given,
         coarse_location=coarse_location,
+        brand=brand,
+        category=category,
     )
     db.add(new_scan)
     db.commit()
@@ -108,6 +108,7 @@ def create_scan(
         message=f"Compliance check complete: {compliance_result['overall_status']}",
     )
 
+
 @router.get("/scans/{scan_id}", response_model=ScanDetailResponse)
 def get_scan(
     scan_id: int,
@@ -129,6 +130,8 @@ def get_scan(
         overall_status=scan.overall_status,
         needs_human_review=scan.needs_human_review,
         coarse_location=scan.coarse_location,
+        brand=scan.brand,
+        category=scan.category,
         created_at=scan.created_at,
         results=scan.results,
     )
@@ -157,6 +160,8 @@ def list_scans(
             status=scan.status,
             overall_status=scan.overall_status,
             coarse_location=scan.coarse_location,
+            brand=scan.brand,
+            category=scan.category,
             created_at=scan.created_at,
         )
         for scan in scans

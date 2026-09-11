@@ -8,8 +8,8 @@ app = FastAPI(
 
 app.include_router(scan_routes.router)
 app.include_router(auth_routes.router)
-app.include_router(dashboard_routes.router)   
-app.include_router(search_routes.router)      
+app.include_router(dashboard_routes.router)
+app.include_router(search_routes.router)
 
 @app.get("/")
 def root():
