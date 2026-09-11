@@ -26,15 +26,22 @@ class ScanResultOut(BaseModel):
 class ScanDetailResponse(BaseModel):
     scan_id: int
     status: str
+
+    product_name: Optional[str]
     overall_status: Optional[str]
     needs_human_review: Optional[bool]
+
     coarse_location: Optional[str]
     brand: Optional[str]
     category: Optional[str]
+
     consent_given: bool
+
     passed_count: Optional[int]
     total_checks: Optional[int]
+
     created_at: datetime
+
     results: List[ScanResultOut] = []
 
     class Config:
@@ -43,11 +50,25 @@ class ScanDetailResponse(BaseModel):
 
 class ScanListItem(BaseModel):
     scan_id: int
-    status: str
-    overall_status: Optional[str]
-    coarse_location: Optional[str]
+
+    product_name: Optional[str]
     brand: Optional[str]
     category: Optional[str]
+
+    # Dashboard can display this as region/area
+    region: Optional[str]
+
+    overall_status: Optional[str]
+
+    # Number of failed compliance checks
+    violations: int
+
+    # Aggregate confidence for the scan
+    confidence: Optional[str]
+
+    # Whether human inspection is required
+    needs_human_review: bool
+
     created_at: datetime
 
     class Config:
@@ -85,9 +106,12 @@ class ScanCreateRequest(BaseModel):
     def reject_precise_coordinates(cls, v):
         if v is None:
             return v
+
         gps_pattern = r"^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$"
+
         if re.match(gps_pattern, v.strip()):
             raise ValueError(
                 "coarse_location must be a locality/city/pincode, not GPS coordinates"
             )
+
         return v

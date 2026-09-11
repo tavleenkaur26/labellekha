@@ -1,8 +1,7 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Float
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 
 
 class User(Base):
@@ -14,7 +13,6 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(String, nullable=False, default="user")  # "user" or "inspector"
 
-    # one user can have many scans
     scans = relationship("Scan", back_populates="owner")
 
 
@@ -24,23 +22,30 @@ class Scan(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     image_path = Column(String, nullable=False)
+
     status = Column(String, nullable=False, default="pending")
     consent_given = Column(Boolean, nullable=False, default=False)
+
+    # Location must remain coarse, never raw GPS
     coarse_location = Column(String, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # NEW — overall compliance result from Role 1
-    overall_status = Column(String, nullable=True)       # "compliant" / "non-compliant"
-    needs_human_review = Column(Boolean, nullable=True)
-
-    owner = relationship("User", back_populates="scans")
-    results = relationship("ScanResult", back_populates="scan")
-
+    # Product information
+    product_name = Column(String, nullable=True)
     brand = Column(String, nullable=True)
     category = Column(String, nullable=True)
 
+    # Overall compliance result
+    overall_status = Column(String, nullable=True)
+    needs_human_review = Column(Boolean, nullable=True)
+
+    # Summary counts
     passed_count = Column(Integer, nullable=True)
     total_checks = Column(Integer, nullable=True)
+
+    owner = relationship("User", back_populates="scans")
+    results = relationship("ScanResult", back_populates="scan")
 
 
 class ScanResult(Base):
@@ -48,12 +53,22 @@ class ScanResult(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     scan_id = Column(Integer, ForeignKey("scans.id"), nullable=False)
+
     clause = Column(String, nullable=False)
-    title = Column(String, nullable=True)          # NEW
-    extracted_text = Column(String, nullable=True)  # this stores "evidence" now
+    title = Column(String, nullable=True)
+
+    # Evidence extracted from OCR
+    extracted_text = Column(String, nullable=True)
+
+    # True = passed, False = failed
     pass_fail = Column(Boolean, nullable=True)
-    confidence = Column(String, nullable=True)       # CHANGED: was Float, now String ("high"/"low"/"not_evaluated")
-    note = Column(String, nullable=True)             # NEW
+
+    # "high" / "low" / "not_evaluated"
+    confidence = Column(String, nullable=True)
+
+    note = Column(String, nullable=True)
+
+    # True when this individual check requires review
     needs_review = Column(Boolean, nullable=False, default=False)
 
     scan = relationship("Scan", back_populates="results")

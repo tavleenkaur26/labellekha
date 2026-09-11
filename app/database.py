@@ -15,3 +15,4 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base is the parent class every table model will inherit from
 Base = declarative_base()
+
