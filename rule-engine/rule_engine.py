@@ -209,15 +209,30 @@ def check_font_size(font_stats: dict | None = None) -> dict:
 # MAIN ENTRY POINT — this is what Role 2 (OCR) and Role 4 (backend) call
 # ---------------------------------------------------------------------------
 
-def check_compliance(extracted_text: str, ocr_metadata: dict | None = None) -> dict:
+def check_compliance(extracted_text: str, font_stats: dict | None = None, ocr_metadata: dict | None = None, **kwargs) -> dict:
     """
     Takes raw OCR-extracted text, runs it through all clause checks,
     returns a full compliance result.
 
-    ocr_metadata (optional): pass Role 2's full return_dict=True output
-    here to enable the font-size check and factor in their own
-    recapture_needed quality flag.
+    Contract with Person 4's backend: check_compliance(text, font_stats=font_stats)
+    font_stats: pass Role 2's font_stats dict directly (from extract_text's
+                return_dict=True output) — this is the primary supported path.
+    ocr_metadata: legacy/alternate path — pass the FULL extract_text dict here
+                  instead, and font_stats + recapture_needed will be pulled
+                  from it automatically. Kept for backward compatibility.
+    **kwargs: absorbs any extra fields other integrations might pass, so
+              this function doesn't break if the contract grows.
     """
+    # Resolve font_stats from whichever path was used
+    resolved_font_stats = font_stats
+    recapture_needed = False
+    ocr_status = None
+
+    if ocr_metadata:
+        resolved_font_stats = resolved_font_stats or ocr_metadata.get("font_stats")
+        recapture_needed = ocr_metadata.get("recapture_needed", False)
+        ocr_status = ocr_metadata.get("status")
+
     checks = [
         check_manufacturer(extracted_text),
         check_generic_name(extracted_text),
@@ -225,7 +240,7 @@ def check_compliance(extracted_text: str, ocr_metadata: dict | None = None) -> d
         check_mfg_date(extracted_text),
         check_mrp(extracted_text),
         check_consumer_care(extracted_text),
-        check_font_size(ocr_metadata.get("font_stats") if ocr_metadata else None),
+        check_font_size(resolved_font_stats),
     ]
 
     scored_checks = [c for c in checks if c["pass"] is not None]
@@ -233,10 +248,7 @@ def check_compliance(extracted_text: str, ocr_metadata: dict | None = None) -> d
     total = len(scored_checks)
 
     needs_review = any(c["confidence"] == "low" for c in scored_checks)
-    # Also honor Role 2's own quality flag — if THEY think the photo was
-    # too blurry/sparse to trust, we should too, regardless of what our
-    # regex happened to match
-    if ocr_metadata and ocr_metadata.get("recapture_needed"):
+    if recapture_needed:
         needs_review = True
 
     overall_status = "compliant" if passed == total else "non-compliant"
@@ -246,7 +258,7 @@ def check_compliance(extracted_text: str, ocr_metadata: dict | None = None) -> d
         "passed_count": passed,
         "total_checks": total,
         "needs_human_review": needs_review,
-        "ocr_quality_flag": ocr_metadata.get("status") if ocr_metadata else None,
+        "ocr_quality_flag": ocr_status,
         "checks": checks,
     }
 
