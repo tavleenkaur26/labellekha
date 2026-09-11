@@ -11,6 +11,9 @@ import importlib.util
 import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
+from fastapi import HTTPException
+from app.schemas import ScanDetailResponse
+
 router = APIRouter()
 
 UPLOAD_DIR = "uploaded_images"
@@ -99,4 +102,29 @@ def create_scan(
         scan_id=new_scan.id,
         status=new_scan.status,
         message=f"Compliance check complete: {compliance_result['overall_status']}",
+    )
+
+@router.get("/scans/{scan_id}", response_model=ScanDetailResponse)
+def get_scan(
+    scan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    # Only allow the scan's owner or an inspector to view it
+    if scan.user_id != current_user.id and current_user.role != "inspector":
+        raise HTTPException(status_code=403, detail="Not authorized to view this scan")
+
+    return ScanDetailResponse(
+        scan_id=scan.id,
+        status=scan.status,
+        overall_status=scan.overall_status,
+        needs_human_review=scan.needs_human_review,
+        coarse_location=scan.coarse_location,
+        created_at=scan.created_at,
+        results=scan.results,
     )

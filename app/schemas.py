@@ -13,9 +13,11 @@ class ScanCreateResponse(BaseModel):
 
 class ScanResultOut(BaseModel):
     clause: str
+    title: Optional[str]
     extracted_text: Optional[str]
     pass_fail: Optional[bool]
-    confidence: Optional[float]
+    confidence: Optional[str]
+    note: Optional[str]
     needs_review: bool
 
     class Config:
@@ -25,6 +27,9 @@ class ScanResultOut(BaseModel):
 class ScanDetailResponse(BaseModel):
     scan_id: int
     status: str
+    overall_status: Optional[str]
+    needs_human_review: Optional[bool]
+    coarse_location: Optional[str]
     created_at: datetime
     results: List[ScanResultOut] = []
 
