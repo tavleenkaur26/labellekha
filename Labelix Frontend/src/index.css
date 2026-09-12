@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  /* Dark backgrounds */
+  --color-bg-base: #0B1118;
+  --color-bg-secondary: #111A24;
+  --color-bg-elevated: #17222D;
+  --color-bg-card: #17222D;
+
+  /* Text */
+  --color-text-primary: #F4F7FA;
+  --color-text-secondary: #A7B4C0;
+  --color-text-muted: #70808E;
+  --color-text-disabled: #53616D;
+
+  /* Accents */
+  --color-cyan: #72D8F4;
+  --color-cyan-dim: #3DB5D8;
+  --color-violet: #9C8CFF;
+  --color-mint: #64D6C4;
+  --color-gold: #E6B96A;
+  --color-coral: #EF737A;
+  --color-success: #59C99D;
+
+  /* Border */
+  --color-border: rgba(255,255,255,0.08);
+
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  color: #F4F7FA;
+  background-color: #0B1118;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Glass utility */
+.glass {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.glass-sm {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #72D8F4, #9C8CFF);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(114,216,244,0.15) transparent;
+}
+*::-webkit-scrollbar { width: 4px; height: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: rgba(114,216,244,0.15); border-radius: 2px; }
+
+/* Animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-14px); }
+}
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes scanLine {
+  0% { transform: translateY(0px); opacity: 0; }
+  5% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateY(220px); opacity: 0; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes chipReveal {
+  from { opacity: 0; transform: translateX(-8px) scale(0.94); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes pulseRing {
+  0%, 100% { transform: scale(1); opacity: 0.2; }
+  50% { transform: scale(1.06); opacity: 0.07; }
+}
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes ambientShift {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+  50% { transform: translate(20px, -15px) scale(1.05); opacity: 0.6; }
+}
+
+.animate-float { animation: float 5s ease-in-out infinite; }
+.animate-float-slow { animation: floatSlow 6s ease-in-out infinite; }
+.animate-scan-line { animation: scanLine 2.8s ease-in-out infinite; }
+.animate-fade-in-up { animation: fadeInUp 0.7s ease-out forwards; }
+.animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+.animate-pulse-ring { animation: pulseRing 3s ease-in-out infinite; }
+.animate-glow-pulse { animation: glowPulse 2s ease-in-out infinite; }
+.animate-blink { animation: blink 1s step-end infinite; }
+.animate-slide-in { animation: slideIn 0.4s ease-out forwards; }
+.animate-ambient { animation: ambientShift 8s ease-in-out infinite; }
+
+.chip-1 { animation: chipReveal 0.5s ease-out 0.4s both; }
+.chip-2 { animation: chipReveal 0.5s ease-out 0.7s both; }
+.chip-3 { animation: chipReveal 0.5s ease-out 1.0s both; }
+.chip-4 { animation: chipReveal 0.5s ease-out 1.3s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
