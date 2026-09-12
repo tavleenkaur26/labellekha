@@ -14,28 +14,109 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 
 export default function App() {
-  const [page, setPage] = useState<Page>(() => localStorage.getItem('labelix_token') ? 'dashboard' : 'login');
-  const [session, setSession] = useState<UserSession | null>(() => JSON.parse(localStorage.getItem('labelix_user') || 'null'));
-  const navigate: NavigateFn = (next) => setPage(next);
+  const [page, setPage] = useState<Page>(() =>
+    localStorage.getItem('labelix_token') ? 'dashboard' : 'login'
+  );
+
+  const [session, setSession] = useState<UserSession | null>(() =>
+    JSON.parse(localStorage.getItem('labelix_user') || 'null')
+  );
+
+  const [dashboardRefresh, setDashboardRefresh] = useState(0);
+
+  const navigate: NavigateFn = (next) => {
+    setPage(next);
+
+    // Refresh Dashboard whenever user navigates back to it
+    if (next === 'dashboard') {
+      setDashboardRefresh((prev) => prev + 1);
+    }
+  };
 
   useEffect(() => {
-    if (!localStorage.getItem('labelix_token') && page !== 'login') setPage('login');
+    if (!localStorage.getItem('labelix_token') && page !== 'login') {
+      setPage('login');
+    }
   }, [page]);
 
-  if (page === 'login' || !localStorage.getItem('labelix_token')) return <Login onSuccess={(user) => { setSession(user); setPage('dashboard'); }} />;
+  if (
+    page === 'login' ||
+    !localStorage.getItem('labelix_token')
+  ) {
+    return (
+      <Login
+        onSuccess={(user) => {
+          setSession(user);
+          setPage('dashboard');
+          setDashboardRefresh((prev) => prev + 1);
+        }}
+      />
+    );
+  }
 
   const content = {
-    dashboard: <Dashboard navigate={navigate} session={session} />,
-    'new-scan': <NewScan navigate={navigate} />,
-    processing: <Processing navigate={navigate} />,
-    'inspection-result': <InspectionResult navigate={navigate} />,
-    'consumer-result': <ConsumerResult navigate={navigate} />,
-    'producer-precheck': <ProducerPreCheck navigate={navigate} />,
-    'ai-assistant': <AIAssistant navigate={navigate} />,
-    products: <Products navigate={navigate} />,
-    reports: <Reports navigate={navigate} />,
-    settings: <Settings navigate={navigate} session={session} setSession={setSession} />,
-  }[page] || <Dashboard navigate={navigate} session={session} />;
+    dashboard: (
+      <Dashboard
+        key={`dashboard-${dashboardRefresh}`}
+        navigate={navigate}
+        session={session}
+      />
+    ),
 
-  return <AppShell page={page} navigate={navigate} session={session}>{content}</AppShell>;
+    'new-scan': (
+      <NewScan navigate={navigate} />
+    ),
+
+    processing: (
+      <Processing navigate={navigate} />
+    ),
+
+    'inspection-result': (
+      <InspectionResult navigate={navigate} />
+    ),
+
+    'consumer-result': (
+      <ConsumerResult navigate={navigate} />
+    ),
+
+    'producer-precheck': (
+      <ProducerPreCheck navigate={navigate} />
+    ),
+
+    'ai-assistant': (
+      <AIAssistant navigate={navigate} />
+    ),
+
+    products: (
+      <Products navigate={navigate} />
+    ),
+
+    reports: (
+      <Reports navigate={navigate} />
+    ),
+
+    settings: (
+      <Settings
+        navigate={navigate}
+        session={session}
+        setSession={setSession}
+      />
+    ),
+  }[page] || (
+    <Dashboard
+      key={`dashboard-${dashboardRefresh}`}
+      navigate={navigate}
+      session={session}
+    />
+  );
+
+  return (
+    <AppShell
+      page={page}
+      navigate={navigate}
+      session={session}
+    >
+      {content}
+    </AppShell>
+  );
 }
