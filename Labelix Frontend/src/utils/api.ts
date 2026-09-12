@@ -1,60 +1,76 @@
-import { ScanResult, ProductSummary, ReportFilter } from "../types";
+import type { DashboardStats, PriorityQueueItem, ReviewQueueItem, ScanDetail, ScanListItem } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
-async function handleResponse<T>(response: Response): Promise<T> {
+function authHeaders(extra: HeadersInit = {}) {
+  const token = localStorage.getItem('labelix_token');
+  return { ...extra, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers: authHeaders(init.headers) });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const message = errorData.detail || errorData.message || `Request failed with status ${response.status}`;
-    throw new Error(message);
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 401) localStorage.removeItem('labelix_token');
+    throw new Error(body.detail || body.message || `Request failed (${response.status})`);
   }
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
 export const api = {
-  // Upload and process image through OCR & Compliance engine
-  async uploadScan(file: File, options?: { category?: string }): Promise<ScanResult> {
-    const formData = new FormData();
-    formData.append("file", file);
-    if (options?.category) {
-      formData.append("category", options.category);
-    }
-
-    const response = await fetch(`${API_BASE_URL}/api/scan`, {
-      method: "POST",
-      body: formData,
+  async login(email: string, password: string) {
+    const body = new URLSearchParams({ username: email, password });
+    return request<{ access_token: string; token_type: string }>('/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
     });
-    return handleResponse<ScanResult>(response);
   },
-
-  // Retrieve single scan result
-  async getScanResult(scanId: string): Promise<ScanResult> {
-    const response = await fetch(`${API_BASE_URL}/api/scan/${scanId}`);
-    return handleResponse<ScanResult>(response);
+  async register(name: string, email: string, password: string, role: string) {
+    return request<{ id: number; name: string; email: string; role: string }>('/auth/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password, role }),
+    });
   },
-
-  // Fetch all recent scans
-  async getRecentScans(limit = 10): Promise<ScanResult[]> {
-    const response = await fetch(`${API_BASE_URL}/api/scans?limit=${limit}`);
-    return handleResponse<ScanResult[]>(response);
+  async uploadScan(file: File, fields: { consent_given: boolean; coarse_location?: string; product_name?: string; brand?: string; category?: string }) {
+    const form = new FormData();
+    form.append('image', file);
+    form.append('consent_given', String(fields.consent_given));
+    if (fields.coarse_location) form.append('coarse_location', fields.coarse_location);
+    if (fields.product_name) form.append('product_name', fields.product_name);
+    if (fields.brand) form.append('brand', fields.brand);
+    if (fields.category) form.append('category', fields.category);
+    return request<{ scan_id: number; status: string; message?: string }>('/scans', { method: 'POST', body: form });
   },
-
-  // Fetch registered products
-  async getProducts(): Promise<ProductSummary[]> {
-    const response = await fetch(`${API_BASE_URL}/api/products`);
-    return handleResponse<ProductSummary[]>(response);
-  },
-
-  // Fetch reports with optional filters
-  async getReports(filters?: ReportFilter): Promise<ScanResult[]> {
-    const params = new URLSearchParams();
-    if (filters?.startDate) params.append("start_date", filters.startDate);
-    if (filters?.endDate) params.append("end_date", filters.endDate);
-    if (filters?.status) params.append("status", filters.status);
-    if (filters?.category) params.append("category", filters.category);
-
-    const query = params.toString() ? `?${params.toString()}` : "";
-    const response = await fetch(`${API_BASE_URL}/api/reports${query}`);
-    return handleResponse<ScanResult[]>(response);
-  },
+  getScan: (id: number) => request<ScanDetail>(`/scans/${id}`),
+  getScans: () => request<ScanListItem[]>('/scans'),
+  getMyScans: (params = '') => request<{ count: number; results: any[] }>(`/scans/my${params}`),
+  searchScans: (params = '') => request<{ count: number; results: any[] }>(`/scans/search${params}`),
+  getDashboardStats: (params = '') => request<DashboardStats>(`/dashboard/stats${params}`),
+  getReviewQueue: () => request<ReviewQueueItem[]>('/dashboard/review-queue'),
+  getPriorityQueue: () => request<PriorityQueueItem[]>('/dashboard/priority-queue'),
+  scanImageUrl: (id: number) => `${API_BASE_URL}/scans/${id}/image`,
+  reportUrl: (id: number, format: 'pdf' | 'csv') => `${API_BASE_URL}/scans/${id}/report?format=${format}`,
 };
+
+export async function downloadAuthenticated(url: string, filename: string) {
+  const response = await fetch(url, { headers: authHeaders() });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `Download failed (${response.status})`);
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+export async function loadAuthenticatedImage(url: string) {
+  const response = await fetch(url, { headers: authHeaders() });
+  if (!response.ok) throw new Error(`Image request failed (${response.status})`);
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}

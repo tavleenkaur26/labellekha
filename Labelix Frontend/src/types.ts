@@ -1,45 +1,81 @@
-export interface OCRField {
-  value: string;
-  confidence: number;
-  bbox?: [number, number, number, number];
+export type Page = 'dashboard' | 'new-scan' | 'processing' | 'inspection-result' | 'consumer-result' | 'producer-precheck' | 'ai-assistant' | 'products' | 'reports' | 'settings' | 'login';
+export type NavigateFn = (page: Page) => void;
+
+export interface ScanResultItem {
+  clause: string;
+  title?: string;
+  extracted_text?: string;
+  pass_fail?: boolean | null;
+  confidence?: string | null;
+  note?: string | null;
+  needs_review: boolean;
 }
 
-export interface RuleViolation {
-  id: string;
-  rule_id: string;
-  severity: "critical" | "warning" | "info";
-  description: string;
-  field?: string;
-  suggested_action?: string;
-}
-
-export interface ScanResult {
-  scan_id: string;
-  timestamp: string;
-  filename: string;
+export interface ScanDetail {
+  scan_id: number;
+  status: string;
   product_name?: string;
-  brand_name?: string;
-  category?: string;
-  compliance_score: number;
-  status: "COMPLIANT" | "NON_COMPLIANT" | "FLAGGED";
-  extracted_fields: Record<string, OCRField>;
-  violations: RuleViolation[];
-  image_url?: string;
+  overall_status?: string | null;
+  needs_human_review?: boolean | null;
+  coarse_location?: string | null;
+  brand?: string | null;
+  category?: string | null;
+  consent_given: boolean;
+  passed_count?: number | null;
+  total_checks?: number | null;
+  created_at: string;
+  results: ScanResultItem[];
 }
 
-export interface ProductSummary {
-  id: string;
-  name: string;
-  category: string;
-  manufacturer?: string;
-  last_scan_date: string;
-  compliance_rate: number;
+export interface ScanListItem {
+  scan_id: number;
+  product_name?: string | null;
+  brand?: string | null;
+  category?: string | null;
+  region?: string | null;
+  overall_status?: string | null;
+  violations: number;
+  confidence?: string | null;
+  needs_human_review: boolean;
+  created_at: string;
+}
+
+export interface DashboardStats {
   total_scans: number;
+  compliant_count: number;
+  non_compliant_count: number;
+  compliance_rate: number;
+  recapture_needed_count: number;
+  human_review_count: number;
+  total_violations: number;
+  most_violated_rule?: string | null;
+  violations_by_brand: Record<string, number>;
+  violations_by_category: Record<string, number>;
+  violations_by_area: Record<string, number>;
+  scans_by_area: Record<string, number>;
+  violations_by_clause: Record<string, number>;
 }
 
-export interface ReportFilter {
-  startDate?: string;
-  endDate?: string;
-  status?: string;
-  category?: string;
+export interface ReviewQueueItem {
+  scan_id: number;
+  product_name?: string | null;
+  brand?: string | null;
+  reason: string;
+  confidence: string;
+  status: string;
+  created_at: string;
+}
+
+export interface PriorityQueueItem {
+  scan_id: number;
+  product_name?: string | null;
+  brand?: string | null;
+  priority_score: number;
+  reason: string;
+}
+
+export interface UserSession {
+  name: string;
+  email: string;
+  role: string;
 }
