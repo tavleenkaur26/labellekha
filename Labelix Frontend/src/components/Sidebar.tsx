@@ -73,7 +73,7 @@ export default function Sidebar({ page, navigate }: Props) {
             </svg>
           </div>
           <div>
-            <span className="font-display font-700 text-[#F4F7FA] text-sm">MetriCheck</span>
+            <span className="font-display font-700 text-[#F4F7FA] text-sm">LabelLekha</span>
             <p className="text-[#53616D] text-xs">Compliance platform</p>
           </div>
         </div>

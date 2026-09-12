@@ -34,7 +34,7 @@ export default function AppShell({ page, navigate, children }: Props) {
               <path d="M3 6h16M3 11h16M3 16h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
-          <span className="font-display font-700 text-[#F4F7FA] text-base">MetriCheck</span>
+          <span className="font-display font-700 text-[#F4F7FA] text-base">LabelLekha</span>
         </div>
 
         <main className="flex-1 overflow-y-auto">
