@@ -1,0 +1,78 @@
+/* ============================================================
+   LABELLEKHA — SEARCH & HISTORY / INSPECTION RECORDS
+   Add this block to the END of:
+   Labelix Frontend/src/index.css
+
+   These selectors are page-scoped with the records-* prefix,
+   so they do not alter Dashboard or New Scan styling.
+   ============================================================ */
+
+.records-page{display:flex;flex-direction:column;gap:14px}
+.records-toolbar{background:#fff;border:1px solid #dfe4e8;border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(23,32,42,.03)}
+.records-search-row{display:flex;gap:10px;align-items:center}
+.records-search{position:relative;flex:1}
+.records-search-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:#8a959d;font-size:15px;pointer-events:none}
+.records-search input{width:100%;height:42px;border:1px solid #ccd5db;border-radius:8px;padding:0 13px 0 36px;outline:none;color:#17202a;background:#fff}
+.records-search input:focus,.records-filter select:focus,.records-date input:focus{border-color:#829a8b;box-shadow:0 0 0 3px #eef4f0}
+.records-filter-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}
+.records-filter label,.records-date label{display:block;font:600 9px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#7b8790;margin:0 0 5px}
+.records-filter select,.records-date input{width:100%;height:38px;border:1px solid #d4dbe0;border-radius:7px;background:#fafbfb;color:#34414a;padding:0 10px;outline:none;font-size:12px}
+.records-date{min-width:0}.records-date input{font-size:12px}
+.records-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.records-action{height:36px;border-radius:7px;padding:0 12px;border:1px solid #ccd5db;background:#fff;color:#4d5962;font-size:12px;font-weight:600}
+.records-action:hover{background:#f5f7f7}.records-action.primary{background:#263a31;border-color:#263a31;color:#fff}.records-action.primary:hover{background:#31483c}
+.records-summary{display:flex;justify-content:space-between;align-items:end;padding:4px 2px 0}
+.records-summary h3{margin:0;font-size:14px;letter-spacing:-.01em}
+.records-summary p{margin:4px 0 0;color:#7b8790;font-size:11px}
+.records-summary-meta{display:flex;align-items:center;gap:8px;color:#7b8790;font-size:11px}
+.records-count{font:500 11px 'IBM Plex Mono',monospace;background:#eef1f2;border-radius:99px;padding:5px 8px;color:#53606a}
+.records-table-card{background:#fff;border:1px solid #dfe4e8;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(23,32,42,.03)}
+.records-table-wrap{overflow-x:auto}
+.records-table{width:100%;border-collapse:collapse;min-width:820px}
+.records-table th{text-align:left;padding:11px 14px;border-bottom:1px solid #dfe4e8;color:#7b8790;font:600 9px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;background:#fbfcfc;white-space:nowrap}
+.records-table td{padding:13px 14px;border-bottom:1px solid #edf0f2;font-size:12px;color:#47535c;vertical-align:middle}
+.records-table tbody tr{cursor:pointer;transition:background .12s ease}
+.records-table tbody tr:hover{background:#fafcfa}
+.records-table tbody tr:last-child td{border-bottom:0}
+.record-id{font:600 11px 'IBM Plex Mono',monospace;color:#5e6973}
+.record-product strong{display:block;font-size:12px;color:#17202a;font-weight:600}
+.record-product small{display:block;margin-top:3px;color:#8a959d;font-size:10px}
+.record-category{color:#56626c}
+.records-status{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:5px;font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;white-space:nowrap}
+.records-status-good{color:#1d7a53;background:#eaf6ef}
+.records-status-bad{color:#a43d3d;background:#faeded}
+.records-status-warn{color:#8a651d;background:#fbf3dc}
+.records-status-neutral{color:#5e6b75;background:#eef1f3}
+.review-required{display:inline-flex;align-items:center;gap:5px;color:#8a651d;font-size:11px;font-weight:600}
+.review-dot{width:6px;height:6px;border-radius:50%;background:#c99a35}
+.review-clear{color:#a0a8ae;font-size:12px}
+.record-date strong{display:block;font-size:11px;color:#4c5861;font-weight:500}
+.record-date small{display:block;margin-top:3px;color:#969fa5;font-size:10px}
+.record-action{opacity:0;display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:#526c5d;font-size:11px;font-weight:700;padding:5px 4px}
+.records-table tbody tr:hover .record-action{opacity:1}
+.record-action:disabled{opacity:.5;cursor:wait}
+.records-empty{padding:58px 24px;text-align:center}
+.records-empty-mark{width:42px;height:42px;border:1px solid #dfe4e8;border-radius:9px;display:grid;place-items:center;margin:0 auto 13px;color:#7f8a92;font-size:18px}
+.records-empty h3{margin:0;font-size:15px}
+.records-empty p{margin:6px 0 15px;color:#7b8790;font-size:12px}
+.records-error{margin:12px 14px 0}
+.records-loading{padding:8px 0}
+.records-skeleton{height:50px;border-bottom:1px solid #edf0f2;position:relative;overflow:hidden}
+.records-skeleton:before{content:'';position:absolute;left:14px;right:14px;top:15px;height:10px;background:#f0f2f3;border-radius:4px}
+.records-footer{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-top:1px solid #edf0f2;background:#fbfcfc;color:#7b8790;font-size:11px}
+.records-pages{display:flex;gap:4px}
+.records-page-btn{min-width:29px;height:29px;border:1px solid #d6dde1;border-radius:6px;background:#fff;color:#59656e;font-size:11px}
+.records-page-btn.active{background:#263a31;border-color:#263a31;color:#fff}
+.records-page-btn:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:900px){
+  .records-filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .records-search-row{align-items:stretch}
+  .records-search-row>.records-action{flex:none}
+}
+@media(max-width:650px){
+  .records-filter-grid{grid-template-columns:1fr 1fr}
+  .records-summary{align-items:flex-start;gap:10px;flex-direction:column}
+  .records-actions{justify-content:stretch}
+  .records-actions .records-action{flex:1}
+  .records-footer{align-items:flex-start;gap:10px;flex-direction:column}
+}

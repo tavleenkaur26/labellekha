@@ -7,8 +7,6 @@ import NewScan from './pages/NewScan';
 import Processing from './pages/Processing';
 import InspectionResult from './pages/InspectionResult';
 import ConsumerResult from './pages/ConsumerResult';
-import ProducerPreCheck from './pages/ProducerPreCheck';
-import AIAssistant from './pages/AIAssistant';
 import Products from './pages/Products';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
@@ -77,14 +75,6 @@ export default function App() {
 
     'consumer-result': (
       <ConsumerResult navigate={navigate} />
-    ),
-
-    'producer-precheck': (
-      <ProducerPreCheck navigate={navigate} />
-    ),
-
-    'ai-assistant': (
-      <AIAssistant navigate={navigate} />
     ),
 
     products: (

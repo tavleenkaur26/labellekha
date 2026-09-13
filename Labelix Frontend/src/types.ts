@@ -1,4 +1,14 @@
-export type Page = 'dashboard' | 'new-scan' | 'processing' | 'inspection-result' | 'consumer-result' | 'producer-precheck' | 'ai-assistant' | 'products' | 'reports' | 'settings' | 'login';
+export type Page =
+  | 'dashboard'
+  | 'new-scan'
+  | 'processing'
+  | 'inspection-result'
+  | 'consumer-result'
+  | 'products'
+  | 'reports'
+  | 'settings'
+  | 'login';
+
 export type NavigateFn = (page: Page) => void;
 
 export interface ScanResultItem {
