@@ -15,10 +15,11 @@ import sys
 import glob
 import importlib.util
 import pytesseract
+import shutil
 
-pytesseract.pytesseract.tesseract_cmd = os.environ.get(
-    "TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
+tess_path = os.environ.get("TESSERACT_CMD") or shutil.which("tesseract")
+if tess_path:
+    pytesseract.pytesseract.tesseract_cmd = tess_path
 
 sys.path.insert(0, ".")
 
@@ -27,7 +28,7 @@ from app.models import User, Scan, ScanResult
 from app.auth import hash_password
 from app.report_adapter import scan_to_report_dict
 from app.report_generator import generate_pdf_report, generate_csv_report
-from OCR.extract import extract_text
+from ocr.extract import extract_text
 
 spec = importlib.util.spec_from_file_location("rule_engine_module", "rule-engine/rule_engine.py")
 rule_engine_module = importlib.util.module_from_spec(spec)

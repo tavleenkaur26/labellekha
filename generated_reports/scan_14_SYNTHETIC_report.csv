@@ -1,0 +1,17 @@
+Product ID,14
+Timestamp,2026-09-13T09:17:10.941718
+Category,
+Region,SYNTHETIC TEST DATA -- not a real scan
+Overall Status,compliant
+Needs Human Review,True
+Passed,6/6
+Image URL,test_assets/synthetic_compliant_label.jpg
+
+Clause,Title,Result,Evidence / Notes,Confidence,Note
+Rule 6(1)(a),Manufacturer / Packer / Importer Details,PASS,"Marketed by: ABC Foods Pvt Ltd, Sector 5, Gurugram",high,
+Rule 6(1)(b),Common / Generic Name of Commodity,PASS,Label text present (not verified against a product-name dictionary),low,
+Rule 6(1)(c),Net Quantity Declaration,PASS,200g,high,
+Rule 6(1)(d),Month & Year of Manufacture / Packing,PASS,03/2026,high,
+Rule 6(1)(e),Retail Sale Price (MRP),PASS,MRP Rs.85,high,
+Rule 6(2),Consumer Complaint Contact,PASS,"Customer Care: 1800-123-4567, care@abcfoods.com",high,
+Rule 7,Letter Height / Font Size Requirement,NOT EVALUATED,Check not yet implemented / awaiting calibration data,not_evaluated,No font data available from OCR pipeline.

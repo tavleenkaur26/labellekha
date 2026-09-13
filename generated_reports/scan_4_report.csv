@@ -1,0 +1,17 @@
+Product ID,4
+Timestamp,2026-09-13T09:15:37.775016
+Category,
+Region,Test Region
+Overall Status,non-compliant
+Needs Human Review,True
+Passed,3/7
+Image URL,OCR/ex1.jpeg
+
+Clause,Title,Result,Evidence / Notes,Confidence,Note
+Rule 6(1)(a),Manufacturer / Packer / Importer Details,FAIL,Not detected on label,low,
+Rule 6(1)(b),Common / Generic Name of Commodity,PASS,Label text present (not verified against a product-name dictionary),low,
+Rule 6(1)(c),Net Quantity Declaration,FAIL,Not detected on label,low,
+Rule 6(1)(d),Month & Year of Manufacture / Packing,FAIL,Not detected on label,low,
+Rule 6(1)(e),Retail Sale Price (MRP),FAIL,Not detected on label,low,
+Rule 6(2),Consumer Complaint Contact,PASS,Ecare@godrejcp.com,low,
+Rule 7,Letter Height / Font Size Requirement,PASS,Estimated letter height: 4.65mm (uncalibrated approximation),low,"Approximate estimate only, not calibrated against a reference object. Needs human verification before any enforcement action."

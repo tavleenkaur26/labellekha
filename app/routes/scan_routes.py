@@ -26,7 +26,10 @@ import importlib.util
 import pytesseract
 from typing import List
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+import shutil
+tess_path = shutil.which("tesseract")
+if tess_path:
+    pytesseract.pytesseract.tesseract_cmd = tess_path
 
 
 router = APIRouter()

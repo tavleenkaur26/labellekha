@@ -10,7 +10,10 @@ import sys
 import importlib.util
 import pytesseract
 
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+import shutil
+tess_path = shutil.which("tesseract")
+if tess_path:
+    pytesseract.pytesseract.tesseract_cmd = tess_path
 
 sys.path.insert(0, ".")
 
