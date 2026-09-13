@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # System dependencies:
 # - tesseract-ocr: the actual OCR engine used by pytesseract
