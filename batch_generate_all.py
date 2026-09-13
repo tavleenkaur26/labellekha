@@ -28,7 +28,7 @@ from app.models import User, Scan, ScanResult
 from app.auth import hash_password
 from app.report_adapter import scan_to_report_dict
 from app.report_generator import generate_pdf_report, generate_csv_report
-from ocr.extract import extract_text
+from OCR.extract import extract_text
 
 spec = importlib.util.spec_from_file_location("rule_engine_module", "rule-engine/rule_engine.py")
 rule_engine_module = importlib.util.module_from_spec(spec)
