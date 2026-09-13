@@ -2,28 +2,127 @@ import cv2
 import pytesseract
 import numpy as np
 import re
+import os
+import tempfile
+
 from typing import Dict, Any, Union
 
 
+# ============================================================
+# COMMON LEGAL METROLOGY / LABEL WORDS
+# ============================================================
+
 COMMON_METROLOGY_WORDS = {
-    "mrp", "rs", "net", "qty", "quantity", "mfd", "batch", "pkd", "use",
-    "before", "date", "exp", "expiry", "care", "consumer", "customer",
-    "email", "phone", "tel", "ltd", "pvt", "limited", "products", "road",
-    "street", "mumbai", "delhi", "india", "regd", "office", "lic", "fssai",
-    "weight", "ingredients", "nutrition", "energy", "fat", "sugar", "protein",
-    "carbohydrate", "free", "gm", "ml", "kg", "grams", "milliliters",
-    "inclusive", "taxes", "parle", "nestle", "haldiram", "cell", "crossing",
-    "vile"
+    "mrp",
+    "rs",
+    "net",
+    "qty",
+    "quantity",
+    "mfd",
+    "batch",
+    "pkd",
+    "use",
+    "before",
+    "date",
+    "exp",
+    "expiry",
+    "care",
+    "consumer",
+    "customer",
+    "email",
+    "phone",
+    "tel",
+    "ltd",
+    "pvt",
+    "limited",
+    "products",
+    "road",
+    "street",
+    "mumbai",
+    "delhi",
+    "india",
+    "regd",
+    "office",
+    "lic",
+    "fssai",
+    "weight",
+    "ingredients",
+    "nutrition",
+    "energy",
+    "fat",
+    "sugar",
+    "protein",
+    "carbohydrate",
+    "free",
+    "gm",
+    "ml",
+    "kg",
+    "grams",
+    "milliliters",
+    "inclusive",
+    "taxes",
+    "parle",
+    "nestle",
+    "haldiram",
+    "cell",
+    "crossing",
+    "vile",
 }
 
 
-def auto_rotate(img: np.ndarray) -> np.ndarray:
+# ============================================================
+# HELPER — SAVE IMAGE FOR TESSERACT
+# ============================================================
+
+def save_temp_image(img: np.ndarray) -> str:
     """
-    Detect text orientation using Tesseract OSD and rotate upright.
+    Save a NumPy/OpenCV image to a unique temporary PNG file.
+
+    This avoids passing raw NumPy arrays directly to Tesseract,
+    which can cause temp-file errors when OCR runs inside
+    FastAPI worker/background threads.
     """
 
+    fd, temp_path = tempfile.mkstemp(
+        suffix=".png",
+        prefix="labellekha_ocr_"
+    )
+
+    os.close(fd)
+
+    success = cv2.imwrite(temp_path, img)
+
+    if not success:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+
+        raise RuntimeError(
+            "Could not save temporary image for OCR."
+        )
+
+    return temp_path
+
+
+# ============================================================
+# AUTO ROTATE
+# ============================================================
+
+def auto_rotate(img: np.ndarray) -> np.ndarray:
+    """
+    Detect text orientation using Tesseract OSD
+    and rotate the image upright.
+    """
+
+    temp_path = None
+
     try:
-        osd_output = pytesseract.image_to_osd(img)
+        temp_path = save_temp_image(img)
+
+        osd_output = pytesseract.image_to_osd(
+            temp_path
+        )
 
         match_angle = re.search(
             r"(?<=Rotate: )\d+",
@@ -36,7 +135,10 @@ def auto_rotate(img: np.ndarray) -> np.ndarray:
         )
 
         if match_angle:
-            angle = int(match_angle.group(0))
+
+            angle = int(
+                match_angle.group(0)
+            )
 
             conf = (
                 float(match_conf.group(0))
@@ -65,16 +167,32 @@ def auto_rotate(img: np.ndarray) -> np.ndarray:
                     )
 
     except Exception:
+        # If orientation detection fails,
+        # continue with the original image.
         pass
+
+    finally:
+
+        if temp_path:
+
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     return img
 
+
+# ============================================================
+# IMAGE PREPROCESSING
+# ============================================================
 
 def preprocess_image(img: np.ndarray) -> np.ndarray:
     """
     Preprocess product-label images for OCR.
 
-    Improves OCR on:
+    Helps with:
+
     - reflective packaging
     - dark backgrounds
     - small text
@@ -82,7 +200,10 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
     - uneven lighting
     """
 
+    # --------------------------------------------------------
     # Convert to grayscale
+    # --------------------------------------------------------
+
     gray = cv2.cvtColor(
         img,
         cv2.COLOR_BGR2GRAY
@@ -90,7 +211,10 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
 
     h, w = gray.shape
 
-    # Resize for better recognition of small label text
+    # --------------------------------------------------------
+    # Resize for small label text
+    # --------------------------------------------------------
+
     longest_side = max(h, w)
 
     if longest_side < 3000:
@@ -122,7 +246,10 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
             interpolation=cv2.INTER_AREA
         )
 
+    # --------------------------------------------------------
     # Improve local contrast
+    # --------------------------------------------------------
+
     clahe = cv2.createCLAHE(
         clipLimit=2.5,
         tileGridSize=(8, 8)
@@ -130,7 +257,10 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
 
     enhanced = clahe.apply(gray)
 
-    # Reduce camera noise while preserving text edges
+    # --------------------------------------------------------
+    # Reduce camera noise
+    # --------------------------------------------------------
+
     denoised = cv2.bilateralFilter(
         enhanced,
         5,
@@ -138,7 +268,10 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
         35
     )
 
+    # --------------------------------------------------------
     # Mild sharpening
+    # --------------------------------------------------------
+
     blurred = cv2.GaussianBlur(
         denoised,
         (0, 0),
@@ -156,6 +289,10 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
     return sharpened
 
 
+# ============================================================
+# CLEAN OCR TEXT
+# ============================================================
+
 def clean_ocr_text(raw_text: str) -> str:
     """
     Normalize common Legal Metrology OCR misreads
@@ -167,7 +304,9 @@ def clean_ocr_text(raw_text: str) -> str:
 
     text = raw_text
 
-    # Standardize metrology keywords
+    # --------------------------------------------------------
+    # MRP normalization
+    # --------------------------------------------------------
 
     text = re.sub(
         r"\bM[\.\s]*A[\.\s]*P\b",
@@ -184,20 +323,26 @@ def clean_ocr_text(raw_text: str) -> str:
     )
 
     text = re.sub(
-        r"\bMRP\s*[:<=]\s*",
+        r"\bMRP\s*[:<=>]\s*",
         "MRP Rs. ",
         text,
         flags=re.IGNORECASE
     )
 
+    # --------------------------------------------------------
+    # Rs normalization
+    # --------------------------------------------------------
+
     text = re.sub(
-        r"\bRs\s*[\.:\-]\s*",
+        r"\bRs\s*[.:,\-]?\s*",
         "Rs. ",
         text,
         flags=re.IGNORECASE
     )
 
-    # Unit normalizations
+    # --------------------------------------------------------
+    # Unit normalization
+    # --------------------------------------------------------
 
     text = re.sub(
         r"\bN\s*e\s*t\b",
@@ -234,23 +379,31 @@ def clean_ocr_text(raw_text: str) -> str:
         flags=re.IGNORECASE
     )
 
-    # Consumer care & contact prefixes
+    # --------------------------------------------------------
+    # Phone number prefix
+    # --------------------------------------------------------
 
     text = re.sub(
-        r"\bPHONE\s*(?:NO|NUMBER)?\s*[:\.\-]?\s*(?:[a-zA-Z]{1,3}\.?)?\s*",
+        r"\bPHONE\s*(?:NO|NUMBER)?\s*[:.\-]?\s*",
         "PHONE NO: ",
         text,
         flags=re.IGNORECASE
     )
 
+    # --------------------------------------------------------
+    # Email prefix
+    # --------------------------------------------------------
+
     text = re.sub(
-        r"\bE[-\s]?mail\s*[:\.\-]?\s*",
+        r"\bE[-\s]?mail\s*[:.\-]?\s*",
         "Email: ",
         text,
         flags=re.IGNORECASE
     )
 
+    # --------------------------------------------------------
     # Line-level filtering
+    # --------------------------------------------------------
 
     lines = text.split("\n")
 
@@ -271,11 +424,18 @@ def clean_ocr_text(raw_text: str) -> str:
         if alpha_count / len(stripped) < 0.4:
             continue
 
-        cleaned_lines.append(stripped)
+        cleaned_lines.append(
+            stripped
+        )
 
-    normalized = "\n".join(cleaned_lines)
+    normalized = "\n".join(
+        cleaned_lines
+    )
 
+    # --------------------------------------------------------
     # Normalize multiple spaces
+    # --------------------------------------------------------
+
     normalized = re.sub(
         r"[ \t]+",
         " ",
@@ -285,6 +445,10 @@ def clean_ocr_text(raw_text: str) -> str:
     return normalized
 
 
+# ============================================================
+# FONT HEURISTICS
+# ============================================================
+
 def compute_font_heuristics(
     font_metadata: list,
     img_height: int
@@ -292,6 +456,11 @@ def compute_font_heuristics(
     """
     Calculate approximate font height metrics
     relative to image dimensions.
+
+    NOTE:
+    Font size is only an approximate heuristic.
+    Physical Legal Metrology verification requires
+    calibrated imaging/physical measurement.
     """
 
     if not font_metadata or img_height <= 0:
@@ -336,13 +505,22 @@ def compute_font_heuristics(
         4
     )
 
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # This is only an uncalibrated estimate.
+    # 150 is NOT a Legal Metrology conversion factor.
+    # --------------------------------------------------------
+
     estimated_mm = round(
         relative_ratio * 150.0,
         2
     )
 
     return {
-        "avg_font_px": round(avg_h, 2),
+        "avg_font_px": round(
+            avg_h,
+            2
+        ),
         "min_font_px": min_h,
         "max_font_px": max_h,
         "relative_height_ratio": relative_ratio,
@@ -350,6 +528,10 @@ def compute_font_heuristics(
         "note": "Approximate uncalibrated font size heuristic"
     }
 
+
+# ============================================================
+# OCR QUALITY EVALUATION
+# ============================================================
 
 def evaluate_quality(
     text: str,
@@ -361,7 +543,12 @@ def evaluate_quality(
     genuine language data.
 
     Returns:
-        (is_recapture_needed, reason, word_ratio)
+
+        (
+            is_recapture_needed,
+            reason,
+            word_ratio
+        )
     """
 
     if len(text.strip()) < 30:
@@ -379,8 +566,6 @@ def evaluate_quality(
             "No recognizable words detected.",
             0.0
         )
-
-    valid_word_count = 0
 
     clean_tokens = [
         re.sub(
@@ -405,6 +590,8 @@ def evaluate_quality(
             0.0
         )
 
+    valid_word_count = 0
+
     for token in clean_tokens:
 
         if (
@@ -414,13 +601,19 @@ def evaluate_quality(
             valid_word_count += 1
 
     word_ratio = round(
-        valid_word_count / len(clean_tokens),
+        valid_word_count /
+        len(clean_tokens),
         2
     )
 
-    # Floor for unreadable noisy captures
+    # --------------------------------------------------------
+    # Very low confidence
+    # --------------------------------------------------------
 
-    if avg_conf < 20.0 and len(text.strip()) < 30:
+    if (
+        avg_conf < 20.0
+        and len(text.strip()) < 30
+    ):
 
         return (
             True,
@@ -428,7 +621,14 @@ def evaluate_quality(
             word_ratio
         )
 
-    if avg_conf < 25.0 and len(text.strip()) < 50:
+    # --------------------------------------------------------
+    # Low quality text
+    # --------------------------------------------------------
+
+    if (
+        avg_conf < 25.0
+        and len(text.strip()) < 50
+    ):
 
         return (
             True,
@@ -447,274 +647,421 @@ def evaluate_quality(
     )
 
 
+# ============================================================
+# MAIN OCR FUNCTION
+# ============================================================
+
 def extract_text(
     image_input: Union[str, np.ndarray],
     return_dict: bool = False
 ) -> Union[str, Dict[str, Any]]:
     """
-    Main extraction interface.
+    Main OCR extraction interface.
 
-    Returns plain string if return_dict=False.
-    Returns structured dictionary if return_dict=True.
+    IMPORTANT FIX:
+    The processed NumPy image is first saved to a unique
+    temporary PNG file.
+
+    Tesseract receives the FILE PATH instead of the NumPy array.
+
+    This avoids:
+
+        TypeError:
+        expected str, bytes or os.PathLike object,
+        not NoneType
+
+    when OCR is executed through FastAPI/background threads.
     """
 
-    # Load image
-    if isinstance(image_input, str):
+    temp_ocr_path = None
 
-        img = cv2.imread(
-            image_input
+    try:
+
+        # ====================================================
+        # 1. LOAD IMAGE
+        # ====================================================
+
+        if isinstance(
+            image_input,
+            str
+        ):
+
+            img = cv2.imread(
+                image_input
+            )
+
+        else:
+
+            img = image_input
+
+        # ====================================================
+        # 2. VALIDATE IMAGE
+        # ====================================================
+
+        if img is None:
+
+            result = {
+                "status": "error",
+                "text": "",
+                "message": "Invalid or unreadable image file.",
+                "char_count": 0,
+                "confidence": 0.0,
+                "recapture_needed": True,
+                "valid_word_ratio": 0.0,
+                "font_metadata": [],
+                "font_stats": compute_font_heuristics(
+                    [],
+                    0
+                )
+            }
+
+            return (
+                result
+                if return_dict
+                else ""
+            )
+
+        # Make sure the image is a NumPy array
+        if not isinstance(
+            img,
+            np.ndarray
+        ):
+
+            raise ValueError(
+                "Image input must be a file path or NumPy image."
+            )
+
+        # ====================================================
+        # 3. ORIGINAL IMAGE DIMENSIONS
+        # ====================================================
+
+        img_h, img_w = img.shape[:2]
+
+        # ====================================================
+        # 4. ORIENTATION CORRECTION
+        # ====================================================
+
+        img_upright = auto_rotate(
+            img
         )
 
-    else:
+        # ====================================================
+        # 5. IMAGE PREPROCESSING
+        # ====================================================
 
-        img = image_input
+        processed_gray = preprocess_image(
+            img_upright
+        )
 
-    # Validate image
-    if img is None:
+        # ====================================================
+        # 6. SAVE PROCESSED IMAGE TO TEMP FILE
+        # ====================================================
+
+        temp_ocr_path = save_temp_image(
+            processed_gray
+        )
+
+        # ====================================================
+        # 7. OCR PASS 1
+        # ====================================================
+
+        custom_config = (
+            r"--oem 3 --psm 3"
+        )
+
+        raw_extracted_text = (
+            pytesseract.image_to_string(
+                temp_ocr_path,
+                config=custom_config
+            )
+        )
+
+        # ====================================================
+        # 8. OCR PASS 2
+        # ====================================================
+
+        alternate_config = (
+            r"--oem 3 --psm 6"
+        )
+
+        alternate_text = (
+            pytesseract.image_to_string(
+                temp_ocr_path,
+                config=alternate_config
+            )
+        )
+
+        # ====================================================
+        # 9. KEEP LONGER OCR RESULT
+        # ====================================================
+
+        if len(
+            alternate_text.strip()
+        ) > len(
+            raw_extracted_text.strip()
+        ):
+
+            raw_extracted_text = (
+                alternate_text
+            )
+
+        # ====================================================
+        # 10. CLEAN OCR TEXT
+        # ====================================================
+
+        cleaned_text = clean_ocr_text(
+            raw_extracted_text
+        )
+
+        # ====================================================
+        # 11. OCR DATA + BOUNDING BOXES
+        # ====================================================
+
+        data = pytesseract.image_to_data(
+            temp_ocr_path,
+            config=custom_config,
+            output_type=pytesseract.Output.DICT
+        )
+
+        font_metadata = []
+
+        valid_confidences = []
+
+        detected_words = []
+
+        for i in range(
+            len(data["text"])
+        ):
+
+            word = data["text"][i].strip()
+
+            # ------------------------------------------------
+            # Tesseract confidence
+            # ------------------------------------------------
+
+            try:
+
+                conf = float(
+                    data["conf"][i]
+                )
+
+            except (
+                ValueError,
+                TypeError
+            ):
+
+                conf = -1
+
+            # ------------------------------------------------
+            # Bounding box
+            # ------------------------------------------------
+
+            try:
+
+                h = int(
+                    data["height"][i]
+                )
+
+                w = int(
+                    data["width"][i]
+                )
+
+                left = int(
+                    data["left"][i]
+                )
+
+                top = int(
+                    data["top"][i]
+                )
+
+            except (
+                ValueError,
+                TypeError
+            ):
+
+                continue
+
+            # ------------------------------------------------
+            # Store valid OCR words
+            # ------------------------------------------------
+
+            if (
+                word
+                and conf > 0
+                and h > 2
+            ):
+
+                valid_confidences.append(
+                    conf
+                )
+
+                detected_words.append(
+                    word
+                )
+
+                font_metadata.append(
+                    {
+                        "word": word,
+                        "confidence": round(
+                            conf,
+                            2
+                        ),
+                        "box": {
+                            "left": left,
+                            "top": top,
+                            "width": w,
+                            "height": h
+                        }
+                    }
+                )
+
+        # ====================================================
+        # 12. AVERAGE OCR CONFIDENCE
+        # ====================================================
+
+        if valid_confidences:
+
+            avg_confidence = round(
+                float(
+                    np.mean(
+                        valid_confidences
+                    )
+                ),
+                2
+            )
+
+        else:
+
+            avg_confidence = 0.0
+
+        # ====================================================
+        # 13. CHARACTER COUNT
+        # ====================================================
+
+        char_count = len(
+            cleaned_text
+        )
+
+        # ====================================================
+        # 14. QUALITY ASSESSMENT
+        # ====================================================
+
+        (
+            recapture,
+            reason,
+            word_ratio
+        ) = evaluate_quality(
+            cleaned_text,
+            avg_confidence,
+            detected_words
+        )
+
+        # ====================================================
+        # 15. STATUS
+        # ====================================================
+
+        status = (
+            "recapture_needed"
+            if recapture
+            else "success"
+        )
+
+        # ====================================================
+        # 16. FONT SIZE HEURISTICS
+        # ====================================================
+
+        font_stats = compute_font_heuristics(
+            font_metadata,
+            processed_gray.shape[0]
+        )
+
+        # ====================================================
+        # 17. FINAL RESULT
+        # ====================================================
+
+        result = {
+            "status": status,
+
+            "text": cleaned_text,
+
+            "message": (
+                reason
+                if recapture
+                else "Text extracted and normalized successfully."
+            ),
+
+            "char_count": char_count,
+
+            "confidence": avg_confidence,
+
+            "valid_word_ratio": word_ratio,
+
+            "recapture_needed": recapture,
+
+            "font_stats": font_stats,
+
+            "font_metadata": font_metadata
+        }
+
+        if return_dict:
+
+            return result
+
+        return cleaned_text
+
+    except Exception as e:
+
+        # ====================================================
+        # OCR ERROR HANDLING
+        # ====================================================
 
         result = {
             "status": "error",
             "text": "",
-            "message": "Invalid or unreadable image file.",
+            "message": f"OCR processing failed: {str(e)}",
             "char_count": 0,
             "confidence": 0.0,
+            "valid_word_ratio": 0.0,
             "recapture_needed": True,
-            "font_metadata": [],
             "font_stats": compute_font_heuristics(
                 [],
                 0
-            )
+            ),
+            "font_metadata": []
         }
 
-        return (
-            result
-            if return_dict
-            else ""
-        )
+        if return_dict:
 
-    img_h, img_w = img.shape[:2]
+            return result
 
-    # -------------------------------------------------
-    # 1. Orientation correction
-    # -------------------------------------------------
+        return ""
 
-    img_upright = auto_rotate(
-        img
-    )
+    finally:
 
-    # -------------------------------------------------
-    # 2. Image preprocessing
-    # -------------------------------------------------
+        # ====================================================
+        # DELETE TEMP OCR FILE
+        # ====================================================
 
-    processed_gray = preprocess_image(
-        img_upright
-    )
+        if temp_ocr_path:
 
-    # -------------------------------------------------
-    # 3. OCR extraction
-    # -------------------------------------------------
+            try:
 
-    custom_config = r"--oem 3 --psm 3"
+                if os.path.exists(
+                    temp_ocr_path
+                ):
 
-    # First OCR pass
-    raw_extracted_text = pytesseract.image_to_string(
-        processed_gray,
-        config=custom_config
-    )
+                    os.remove(
+                        temp_ocr_path
+                    )
 
-    # Second OCR pass
-    # Useful for labels with dense text or columns.
-    alternate_config = r"--oem 3 --psm 6"
+            except OSError:
 
-    alternate_text = pytesseract.image_to_string(
-        processed_gray,
-        config=alternate_config
-    )
-
-    # Keep the longer OCR result
-    if len(alternate_text.strip()) > len(
-        raw_extracted_text.strip()
-    ):
-
-        raw_extracted_text = alternate_text
-
-    # -------------------------------------------------
-    # 4. Clean OCR text
-    # -------------------------------------------------
-
-    cleaned_text = clean_ocr_text(
-        raw_extracted_text
-    )
-
-    # -------------------------------------------------
-    # 5. Extract bounding boxes and confidence
-    # -------------------------------------------------
-
-    data = pytesseract.image_to_data(
-        processed_gray,
-        config=custom_config,
-        output_type=pytesseract.Output.DICT
-    )
-
-    font_metadata = []
-
-    valid_confidences = []
-
-    detected_words = []
-
-    for i in range(
-        len(data["text"])
-    ):
-
-        word = data["text"][i].strip()
-
-        # Tesseract confidence may sometimes be
-        # returned as integer or decimal text.
-        try:
-
-            conf = float(
-                data["conf"][i]
-            )
-
-        except (
-            ValueError,
-            TypeError
-        ):
-
-            conf = -1
-
-        h = int(
-            data["height"][i]
-        )
-
-        w = int(
-            data["width"][i]
-        )
-
-        if (
-            word
-            and conf > 0
-            and h > 2
-        ):
-
-            valid_confidences.append(
-                conf
-            )
-
-            detected_words.append(
-                word
-            )
-
-            font_metadata.append({
-
-                "word": word,
-
-                "confidence": round(
-                    conf,
-                    2
-                ),
-
-                "box": {
-
-                    "left": int(
-                        data["left"][i]
-                    ),
-
-                    "top": int(
-                        data["top"][i]
-                    ),
-
-                    "width": w,
-
-                    "height": h
-                }
-            })
-
-    # -------------------------------------------------
-    # Average OCR confidence
-    # -------------------------------------------------
-
-    avg_confidence = (
-        round(
-            float(
-                np.mean(
-                    valid_confidences
-                )
-            ),
-            2
-        )
-        if valid_confidences
-        else 0.0
-    )
-
-    char_count = len(
-        cleaned_text
-    )
-
-    # -------------------------------------------------
-    # 6. Quality assessment
-    # -------------------------------------------------
-
-    recapture, reason, word_ratio = evaluate_quality(
-        cleaned_text,
-        avg_confidence,
-        detected_words
-    )
-
-    status = (
-        "recapture_needed"
-        if recapture
-        else "success"
-    )
-
-    # -------------------------------------------------
-    # 7. Font size heuristic
-    # -------------------------------------------------
-
-    font_stats = compute_font_heuristics(
-        font_metadata,
-        img_h
-    )
-
-    # -------------------------------------------------
-    # 8. Final result
-    # -------------------------------------------------
-
-    result = {
-
-        "status": status,
-
-        "text": cleaned_text,
-
-        "message": (
-            reason
-            if recapture
-            else "Text extracted and normalized successfully."
-        ),
-
-        "char_count": char_count,
-
-        "confidence": avg_confidence,
-
-        "valid_word_ratio": word_ratio,
-
-        "recapture_needed": recapture,
-
-        "font_stats": font_stats,
-
-        "font_metadata": font_metadata
-    }
-
-    if return_dict:
-
-        return result
-
-    return cleaned_text
+                pass
 
 
-# -----------------------------------------------------
-# Standalone testing
-# -----------------------------------------------------
+# ============================================================
+# STANDALONE TESTING
+# ============================================================
 
 if __name__ == "__main__":
 
@@ -724,6 +1071,10 @@ if __name__ == "__main__":
         sys.argv[1]
         if len(sys.argv) > 1
         else "melody.JPG"
+    )
+
+    print(
+        "\nStarting LabelLekha OCR test...\n"
     )
 
     output = extract_text(
@@ -737,7 +1088,10 @@ if __name__ == "__main__":
 
     print(
         f"Confidence: "
-        f"{output['confidence']}% | "
+        f"{output['confidence']}%"
+    )
+
+    print(
         f"Word Ratio: "
         f"{output.get('valid_word_ratio', 0)}"
     )
@@ -753,9 +1107,17 @@ if __name__ == "__main__":
     )
 
     print(
-        "-" * 50
+        "-" * 60
     )
 
     print(
-        output["text"][:300]
+        "Extracted Text:"
+    )
+
+    print(
+        output["text"][:1000]
+    )
+
+    print(
+        "\nOCR test completed."
     )
