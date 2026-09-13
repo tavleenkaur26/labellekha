@@ -29,9 +29,6 @@ const fmt = (s?: string | null) =>
 const pct = (part?: number, total?: number) =>
   total ? Math.round(((part ?? 0) / total) * 100) : 0;
 
-// Sorted top-N breakdown from a real backend-provided { name: count } map.
-// Used for category/brand/region/clause — never a hardcoded list, so it
-// stays correct even if the rule engine's clause identifiers change.
 const chartData = (values: Record<string, number> = {}) =>
   Object.entries(values)
     .sort((a, b) => b[1] - a[1])
@@ -40,10 +37,6 @@ const chartData = (values: Record<string, number> = {}) =>
 
 const ACTIVITY_DAYS = 14;
 
-// The backend has no dedicated time-series endpoint for inspection volume,
-// so this buckets the scan records already fetched (via GET /scans) by
-// their real `created_at` timestamp and real `overall_status` — a
-// client-side aggregation of real records, not fabricated data.
 function buildActivitySeries(scans: ScanListItem[]) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -70,9 +63,6 @@ function buildActivitySeries(scans: ScanListItem[]) {
   return days;
 }
 
-// Real count of scans from the 7 days before the visible window, from the
-// same fetched list — used only for a genuine week-over-week comparison on
-// the Total Scans KPI (no invented trend).
 function previousWindowCount(scans: ScanListItem[]) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -84,6 +74,13 @@ function previousWindowCount(scans: ScanListItem[]) {
   }).length;
 }
 
+interface MyStats {
+  total_scans: number;
+  compliant_count: number;
+  non_compliant_count: number;
+  review_count: number;
+}
+
 export default function Dashboard({
   navigate,
   session,
@@ -91,7 +88,10 @@ export default function Dashboard({
   navigate: NavigateFn;
   session: UserSession | null;
 }) {
+  const isInspector = session?.role === 'inspector';
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [myStats, setMyStats] = useState<MyStats | null>(null);
   const [scans, setScans] = useState<ScanListItem[]>([]);
   const [review, setReview] = useState<ReviewQueueItem[]>([]);
   const [priority, setPriority] = useState<PriorityQueueItem[]>([]);
@@ -128,24 +128,29 @@ export default function Dashboard({
       const allScans = await api.getScans();
       setScans(allScans);
 
-      const params = new URLSearchParams();
-      if (dateFrom) params.set('date_from', `${dateFrom}T00:00:00`);
-      if (dateTo) params.set('date_to', `${dateTo}T23:59:59`);
-      if (category) params.set('category', category);
+      if (isInspector) {
+        const params = new URLSearchParams();
+        if (dateFrom) params.set('date_from', `${dateFrom}T00:00:00`);
+        if (dateTo) params.set('date_to', `${dateTo}T23:59:59`);
+        if (category) params.set('category', category);
 
-      const query = params.toString() ? `?${params.toString()}` : '';
-      const dashboardStats = await api.getDashboardStats(query);
-      setStats(dashboardStats);
+        const query = params.toString() ? `?${params.toString()}` : '';
+        const dashboardStats = await api.getDashboardStats(query);
+        setStats(dashboardStats);
 
-      try {
-        setReview(await api.getReviewQueue());
-      } catch {
-        setReview([]);
-      }
-      try {
-        setPriority(await api.getPriorityQueue());
-      } catch {
-        setPriority([]);
+        try {
+          setReview(await api.getReviewQueue());
+        } catch {
+          setReview([]);
+        }
+        try {
+          setPriority(await api.getPriorityQueue());
+        } catch {
+          setPriority([]);
+        }
+      } else {
+        const m = await api.getMyStats();
+        setMyStats(m);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load dashboard data.');
@@ -156,7 +161,7 @@ export default function Dashboard({
 
   useEffect(() => {
     loadDashboard();
-  }, []);
+  }, [isInspector]);
 
   const applyFilters = () => loadDashboard();
   const clearFilters = () => {
@@ -166,6 +171,80 @@ export default function Dashboard({
     window.setTimeout(() => loadDashboard(), 0);
   };
 
+  // ============================================================
+  // CONSUMER / REGULAR USER VIEW — simpler, personal-scans only
+  // ============================================================
+  if (!isInspector) {
+    return (
+      <Page title="Dashboard" subtitle={`Your scan activity, ${session?.name || 'welcome'}.`}>
+        <div className="toolbar dashboard-toolbar">
+          <button className="primary-button small" onClick={() => navigate('new-scan')}>＋ New scan</button>
+        </div>
+
+        {error && <div className="error-box">{error}</div>}
+
+        <div className="stat-grid kpi-grid">
+          <div className="stat-card kpi-card kpi-neutral">
+            <div className="stat-icon">▤</div>
+            <div><span>Total scans</span><strong>{myStats?.total_scans ?? '—'}</strong></div>
+          </div>
+          <div className="stat-card kpi-card kpi-good">
+            <div className="stat-icon">✓</div>
+            <div><span>Compliant</span><strong>{myStats?.compliant_count ?? '—'}</strong></div>
+          </div>
+          <div className="stat-card kpi-card kpi-bad">
+            <div className="stat-icon">!</div>
+            <div><span>Non-compliant</span><strong>{myStats?.non_compliant_count ?? '—'}</strong></div>
+          </div>
+          <div className="stat-card kpi-card kpi-warn">
+            <div className="stat-icon">◔</div>
+            <div><span>Needs review</span><strong>{myStats?.review_count ?? '—'}</strong></div>
+          </div>
+        </div>
+
+        <div className="panel recent-inspections-panel">
+          <div className="panel-header">
+            <div><h3>Your recent scans</h3><p className="muted">Scans you've submitted.</p></div>
+            <button className="text-button" onClick={() => navigate('products')}>View all →</button>
+          </div>
+          <div className="table-wrap compact-table">
+            <table>
+              <thead><tr><th>Scan ID</th><th>Product</th><th>Result</th><th>Date</th><th>Actions</th></tr></thead>
+              <tbody>
+                {scans.slice(0, 8).map((s) => (
+                  <tr key={s.scan_id} onClick={() => goToScan(s.scan_id)}>
+                    <td>#{s.scan_id}</td>
+                    <td><strong>{s.product_name || 'Unnamed product'}</strong></td>
+                    <td><span className={`status ${s.overall_status === 'compliant' ? 'good' : s.overall_status === 'non-compliant' ? 'bad' : 'neutral'}`}>{fmt(s.overall_status)}</span></td>
+                    <td>{new Date(s.created_at).toLocaleDateString()}</td>
+                    <td className="row-actions" onClick={(e) => e.stopPropagation()}>
+                      <button className="icon-action" title="View result" onClick={() => goToScan(s.scan_id)}>view</button>
+                      {s.overall_status && (
+                        <button
+                          className="icon-action"
+                          title="Download PDF report"
+                          onClick={() => downloadAuthenticated(api.reportUrl(s.scan_id, 'pdf'), `scan_${s.scan_id}_report.pdf`)}
+                        >
+                          pdf
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {!scans.length && <tr><td colSpan={5} className="empty-table">No scans yet — run your first scan to see it here.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {loading && <div className="dashboard-loading">Refreshing dashboard data…</div>}
+      </Page>
+    );
+  }
+
+  // ============================================================
+  // INSPECTOR VIEW — unchanged, exactly Trisha's design
+  // ============================================================
   const categoryData = chartData(stats?.violations_by_category);
   const brandData = chartData(stats?.violations_by_brand);
   const regionData = chartData(stats?.violations_by_area);
@@ -185,9 +264,6 @@ export default function Dashboard({
   const last7 = activity.slice(-7).reduce((sum, d) => sum + d.total, 0);
   const scansTrend = activityPrev > 0 ? Math.round(((last7 - activityPrev) / activityPrev) * 100) : null;
 
-  // Priority queue severity buckets, derived from the real priority_score
-  // the backend already returns for each non-compliant scan. Thresholds are
-  // a disclosed heuristic on real numbers — not a fabricated categorization.
   const highPriority = priority.filter((p) => p.priority_score >= 7);
   const mediumPriority = priority.filter((p) => p.priority_score >= 4 && p.priority_score < 7);
   const lowPriority = priority.filter((p) => p.priority_score < 4);
@@ -222,7 +298,6 @@ export default function Dashboard({
 
       {error && <div className="error-box">{error}</div>}
 
-      {/* ---- KPI summary ---- */}
       <div className="stat-grid kpi-grid">
         <div className="stat-card kpi-card kpi-neutral">
           <div className="stat-icon">▤</div>
@@ -258,7 +333,6 @@ export default function Dashboard({
         </div>
       </div>
 
-      {/* ---- Primary analytics: trend + compliance distribution ---- */}
       <div className="primary-analytics-grid">
         <div className="panel chart-panel activity-panel-lg">
           <div className="panel-header">
@@ -311,7 +385,6 @@ export default function Dashboard({
         </div>
       </div>
 
-      {/* ---- Inspection priority: distinct, full-width operational section ---- */}
       <div className="panel priority-panel-full">
         <div className="panel-header"><h3>Inspection priority</h3></div>
         <div className="severity-hero">
@@ -358,7 +431,6 @@ export default function Dashboard({
         )}
       </div>
 
-      {/* ---- Recent inspections: distinct, full-width register, below priority ---- */}
       <div className="panel recent-inspections-panel">
         <div className="panel-header">
           <div><h3>Recent inspections</h3><p className="muted">Latest scans from your activity.</p></div>
@@ -396,7 +468,6 @@ export default function Dashboard({
         </div>
       </div>
 
-      {/* ---- Secondary analytics: category / brand / region / clause ---- */}
       <div className="breakdown-grid">
         <div className="panel compact-panel">
           <div className="panel-header"><h3>Violations by category</h3></div>

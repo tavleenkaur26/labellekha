@@ -131,7 +131,7 @@ def create_scan(
     db.refresh(new_scan)
 
     # OCR
-    from OCR.extract import extract_text
+    from ocr.extract import extract_text
 
     ocr_result = extract_text(
         image_path,

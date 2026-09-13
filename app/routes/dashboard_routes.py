@@ -4,11 +4,30 @@ from collections import Counter
 from typing import Optional
 from datetime import datetime
 
-from app.auth import get_db, get_current_inspector
+from app.auth import get_db, get_current_inspector, get_current_user
 from app.models import User, Scan
 from app.queries import get_consented_scans
 
 router = APIRouter()
+
+@router.get("/dashboard/my-stats")
+def get_my_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    scans = db.query(Scan).filter(Scan.user_id == current_user.id).all()
+
+    total = len(scans)
+    compliant = sum(1 for s in scans if s.overall_status == "compliant")
+    non_compliant = sum(1 for s in scans if s.overall_status == "non-compliant")
+    needs_review = sum(1 for s in scans if s.needs_human_review)
+
+    return {
+        "total_scans": total,
+        "compliant_count": compliant,
+        "non_compliant_count": non_compliant,
+        "review_count": needs_review,
+    }
 
 
 def apply_dashboard_filters(

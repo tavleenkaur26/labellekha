@@ -45,6 +45,7 @@ export const api = {
   getMyScans: (params = '') => request<{ count: number; results: any[] }>(`/scans/my${params}`),
   searchScans: (params = '') => request<{ count: number; results: any[] }>(`/scans/search${params}`),
   getDashboardStats: (params = '') => request<DashboardStats>(`/dashboard/stats${params}`),
+  getMyStats: () => request<{ total_scans: number; compliant_count: number; non_compliant_count: number; review_count: number }>('/dashboard/my-stats'),
   getReviewQueue: () => request<ReviewQueueItem[]>('/dashboard/review-queue'),
   getPriorityQueue: () => request<PriorityQueueItem[]>('/dashboard/priority-queue'),
   scanImageUrl: (id: number) => `${API_BASE_URL}/scans/${id}/image`,
