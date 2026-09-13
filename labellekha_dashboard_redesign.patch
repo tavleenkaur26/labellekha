@@ -1,0 +1,450 @@
+diff --git a/Labelix Frontend/src/pages/Dashboard.tsx b/Labelix Frontend/src/pages/Dashboard.tsx
+index c15164e..8dad0f4 100644
+--- a/Labelix Frontend/src/pages/Dashboard.tsx	
++++ b/Labelix Frontend/src/pages/Dashboard.tsx	
+@@ -4,6 +4,8 @@ import {
+   BarChart,
+   CartesianGrid,
+   Cell,
++  Line,
++  LineChart,
+   Pie,
+   PieChart,
+   ResponsiveContainer,
+@@ -19,29 +21,57 @@ import type {
+   ScanListItem,
+   UserSession,
+ } from '../types';
+-import { api } from '../utils/api';
++import { api, downloadAuthenticated } from '../utils/api';
+ import { Page } from './NewScan';
+ 
+-const CLAUSES = [
+-  'Rule 6(1)(a)',
+-  'Rule 6(1)(b)',
+-  'Rule 6(1)(c)',
+-  'Rule 6(1)(d)',
+-  'Rule 6(1)(e)',
+-  'Rule 6(2)',
+-];
+-
+ const fmt = (s?: string | null) =>
+   s ? s.replaceAll('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '—';
+ 
++const pct = (part?: number, total?: number) =>
++  total ? Math.round(((part ?? 0) / total) * 100) : 0;
++
++// Sorted top-N breakdown from a real backend-provided { name: count } map.
++// Used for category/brand/region/clause — never a hardcoded list, so it
++// stays correct even if the rule engine's clause identifiers change.
+ const chartData = (values: Record<string, number> = {}) =>
+   Object.entries(values)
+     .sort((a, b) => b[1] - a[1])
+-    .slice(0, 8)
++    .slice(0, 6)
+     .map(([name, value]) => ({ name, value }));
+ 
+-const clauseData = (values: Record<string, number> = {}) =>
+-  CLAUSES.map((clause) => ({ name: clause, value: values[clause] || 0 }));
++// The backend has no dedicated time-series endpoint for inspection volume.
++// Rather than inventing numbers, this buckets the scan records the page has
++// already fetched (via GET /scans) by their real `created_at` timestamp —
++// a client-side aggregation of real records, not fabricated data.
++function buildActivitySeries(scans: ScanListItem[]) {
++  const today = new Date();
++  today.setHours(0, 0, 0, 0);
++  const days = Array.from({ length: 7 }, (_, i) => {
++    const d = new Date(today);
++    d.setDate(d.getDate() - (6 - i));
++    return { time: d.getTime(), label: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }), value: 0 };
++  });
++  scans.forEach((s) => {
++    const c = new Date(s.created_at);
++    c.setHours(0, 0, 0, 0);
++    const day = days.find((d) => d.time === c.getTime());
++    if (day) day.value += 1;
++  });
++  return days;
++}
++
++// Real count of scans from 7–13 days ago, from the same fetched list, used
++// only to show a genuine week-over-week comparison (no invented trend).
++function previousWindowCount(scans: ScanListItem[]) {
++  const today = new Date();
++  today.setHours(0, 0, 0, 0);
++  return scans.filter((s) => {
++    const c = new Date(s.created_at);
++    c.setHours(0, 0, 0, 0);
++    const diffDays = Math.round((today.getTime() - c.getTime()) / 86400000);
++    return diffDays >= 7 && diffDays <= 13;
++  }).length;
++}
+ 
+ export default function Dashboard({
+   navigate,
+@@ -75,6 +105,11 @@ export default function Dashboard({
+     });
+   }, [scans, category, dateFrom, dateTo]);
+ 
++  const goToScan = (scanId: number) => {
++    localStorage.setItem('labelix_last_scan', String(scanId));
++    navigate('inspection-result');
++  };
++
+   const loadDashboard = async () => {
+     setLoading(true);
+     setError('');
+@@ -109,8 +144,8 @@ export default function Dashboard({
+   };
+ 
+   useEffect(() => {
+-  loadDashboard();
+-}, []);
++    loadDashboard();
++  }, []);
+ 
+   const applyFilters = () => loadDashboard();
+   const clearFilters = () => {
+@@ -123,11 +158,8 @@ export default function Dashboard({
+   const categoryData = chartData(stats?.violations_by_category);
+   const brandData = chartData(stats?.violations_by_brand);
+   const regionData = chartData(stats?.violations_by_area);
+-  const clauseValues = clauseData(stats?.violations_by_clause);
+-  const topClause = clauseValues.reduce(
+-    (top, item) => (item.value > top.value ? item : top),
+-    { name: 'No violations', value: 0 },
+-  );
++  const clauseData = chartData(stats?.violations_by_clause);
++  const topClause = clauseData[0] || null;
+ 
+   const complianceData = stats
+     ? [
+@@ -136,10 +168,15 @@ export default function Dashboard({
+       ]
+     : [];
+ 
++  const activity = useMemo(() => buildActivitySeries(scans), [scans]);
++  const activityTotal = activity.reduce((sum, d) => sum + d.value, 0);
++  const activityPrev = useMemo(() => previousWindowCount(scans), [scans]);
++  const activityChange = activityPrev > 0 ? Math.round(((activityTotal - activityPrev) / activityPrev) * 100) : null;
++
+   return (
+     <Page
+-      title="Dashboard"
+-      subtitle={`Inspection intelligence for ${session?.name || 'your account'}. Use the patterns below to prioritize field inspections.`}
++      title="Overview"
++      subtitle="Monitor compliance findings and prioritize cases requiring human attention."
+     >
+       <div className="toolbar dashboard-toolbar">
+         <div className="filter-group">
+@@ -166,84 +203,203 @@ export default function Dashboard({
+ 
+       {error && <div className="error-box">{error}</div>}
+ 
+-      <div className="stat-grid">
+-        {[
+-          ['Total scans', stats?.total_scans ?? '—'],
+-          ['Compliance rate', stats ? `${stats.compliance_rate}%` : '—'],
+-          ['Non-compliant', stats?.non_compliant_count ?? '—'],
+-          ['Needs inspection', stats?.human_review_count ?? '—'],
+-        ].map(([label, value]) => (
+-          <div className="stat-card" key={label}>
+-            <span>{label}</span>
+-            <strong>{value}</strong>
++      <div className="stat-grid compact-stat-grid">
++        <div className="stat-card">
++          <div className="stat-icon" style={{ color: 'var(--muted)', background: 'var(--surface-soft)' }}>▤</div>
++          <div><span>Total inspections</span><strong>{stats?.total_scans ?? '—'}</strong></div>
++        </div>
++        <div className="stat-card">
++          <div className="stat-icon" style={{ color: 'var(--green)', background: 'var(--green-bg)' }}>✓</div>
++          <div>
++            <span>Compliant</span><strong>{stats?.compliant_count ?? '—'}</strong>
++            {!!stats?.total_scans && <small>{pct(stats.compliant_count, stats.total_scans)}% of total</small>}
++          </div>
++        </div>
++        <div className="stat-card">
++          <div className="stat-icon" style={{ color: 'var(--red)', background: 'var(--red-bg)' }}>!</div>
++          <div>
++            <span>Violations</span><strong>{stats?.non_compliant_count ?? '—'}</strong>
++            {!!stats?.total_scans && <small>{pct(stats.non_compliant_count, stats.total_scans)}% of total</small>}
+           </div>
+-        ))}
+-      </div>
+-
+-      <div className="priority-banner">
+-        <div>
+-          <span className="eyebrow">Inspection priority signal</span>
+-          <h3>{topClause.value ? `${topClause.name} is the most violated clause` : 'No violation pattern yet'}</h3>
+-          <p>
+-            {topClause.value
+-              ? `${topClause.value} recorded failure${topClause.value === 1 ? '' : 's'} in the selected dataset. Use this signal to focus inspection attention where risk is concentrated.`
+-              : 'Run more scans to surface the strongest compliance patterns and prioritize inspections.'}
+-          </p>
+         </div>
+-        <div className="priority-banner-score">
+-          <strong>{stats?.total_violations ?? 0}</strong>
+-          <span>Total violations</span>
++        <div className="stat-card">
++          <div className="stat-icon" style={{ color: 'var(--amber)', background: 'var(--amber-bg)' }}>◔</div>
++          <div>
++            <span>Needs review</span><strong>{stats?.human_review_count ?? '—'}</strong>
++            {!!stats?.total_scans && <small>{pct(stats.human_review_count, stats.total_scans)}% of total</small>}
++          </div>
+         </div>
+       </div>
+ 
+-      <div className="analytics-grid">
+-        <div className="panel chart-panel">
+-          <div className="panel-header"><div><h3>Violations by category</h3><p className="muted">Where non-compliance is concentrated.</p></div></div>
+-          <div className="chart-box">
+-            {categoryData.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={categoryData} margin={{ top: 8, right: 10, left: -15, bottom: 45 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" angle={-30} textAnchor="end" interval={0} tick={{ fontSize: 10 }} /><YAxis allowDecimals={false} tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="value" name="Violations" radius={[4,4,0,0]} /></BarChart></ResponsiveContainer> : <div className="empty-chart">No category violations in this selection.</div>}
++      {!!topClause?.value && (
++        <div className="priority-banner">
++          <div>
++            <span className="eyebrow">Inspection priority signal</span>
++            <h3>{topClause.name} is the most violated clause</h3>
++            <p>
++              {topClause.value} recorded failure{topClause.value === 1 ? '' : 's'} in the selected dataset. Use this signal to focus inspection attention where risk is concentrated.
++            </p>
++          </div>
++          <div className="priority-banner-score">
++            <strong>{stats?.total_violations ?? 0}</strong>
++            <span>Total violations</span>
+           </div>
+         </div>
++      )}
+ 
+-        <div className="panel chart-panel">
+-          <div className="panel-header"><div><h3>Violations by brand</h3><p className="muted">Brands generating the highest violation counts.</p></div></div>
++      <div className="analytics-grid overview-grid">
++        <div className="panel chart-panel activity-panel">
++          <div className="panel-header">
++            <div><h3>Inspection activity</h3><p className="muted">Last 7 days, from your loaded scan records.</p></div>
++            {activityTotal > 0 && (
++              <div className="volume-figure">
++                <strong>{activityTotal}</strong>
++                <span>{activityChange === null ? 'inspections' : `${activityChange >= 0 ? '+' : ''}${activityChange}% vs previous 7 days`}</span>
++              </div>
++            )}
++          </div>
+           <div className="chart-box">
+-            {brandData.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={brandData} margin={{ top: 8, right: 10, left: -15, bottom: 45 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" angle={-30} textAnchor="end" interval={0} tick={{ fontSize: 10 }} /><YAxis allowDecimals={false} tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="value" name="Violations" radius={[4,4,0,0]} /></BarChart></ResponsiveContainer> : <div className="empty-chart">No brand violations in this selection.</div>}
++            {activityTotal ? (
++              <ResponsiveContainer width="100%" height="100%">
++                <LineChart data={activity} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
++                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
++                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
++                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
++                  <Tooltip />
++                  <Line type="monotone" dataKey="value" name="Inspections" stroke="#57642f" strokeWidth={2} dot={{ r: 3 }} />
++                </LineChart>
++              </ResponsiveContainer>
++            ) : (
++              <div className="empty-chart">No scans recorded in the last 7 days.</div>
++            )}
+           </div>
++          {stats?.total_scans ? (
++            <div className="mix-row">
++              <ResponsiveContainer width={110} height={110}>
++                <PieChart>
++                  <Pie data={complianceData} dataKey="value" nameKey="name" innerRadius={34} outerRadius={50} paddingAngle={2}>
++                    {complianceData.map((entry) => <Cell key={entry.name} className={entry.name === 'Compliant' ? 'slice-good' : 'slice-bad'} />)}
++                  </Pie>
++                  <Tooltip />
++                </PieChart>
++              </ResponsiveContainer>
++              <div className="donut-legend">
++                <div><i className="dot-good" /><span>Compliant</span><strong>{stats.compliant_count} ({pct(stats.compliant_count, stats.total_scans)}%)</strong></div>
++                <div><i className="dot-bad" /><span>Non-compliant</span><strong>{stats.non_compliant_count} ({pct(stats.non_compliant_count, stats.total_scans)}%)</strong></div>
++                <div><i className="dot-warn" /><span>Needs review</span><strong>{stats.human_review_count} ({pct(stats.human_review_count, stats.total_scans)}%)</strong></div>
++              </div>
++            </div>
++          ) : null}
+         </div>
+ 
+         <div className="panel chart-panel">
+-          <div className="panel-header"><div><h3>Violations by region</h3><p className="muted">Geographic hotspots for inspection planning.</p></div></div>
+-          <div className="chart-box">
+-            {regionData.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={regionData} margin={{ top: 8, right: 10, left: -15, bottom: 45 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" angle={-30} textAnchor="end" interval={0} tick={{ fontSize: 10 }} /><YAxis allowDecimals={false} tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="value" name="Violations" radius={[4,4,0,0]} /></BarChart></ResponsiveContainer> : <div className="empty-chart">No regional violations in this selection.</div>}
+-          </div>
++          <div className="panel-header"><div><h3>Violations by category</h3><p className="muted">Where non-compliance is concentrated.</p></div></div>
++          {categoryData.length ? (
++            <div className="bars">
++              {categoryData.map((row) => (
++                <div className="bar-row" key={row.name}>
++                  <span>{row.name}</span>
++                  <div><i style={{ width: `${pct(row.value, categoryData[0].value)}%` }} /></div>
++                  <span>{row.value}</span>
++                </div>
++              ))}
++            </div>
++          ) : (
++            <div className="empty-chart">No category violations in this selection.</div>
++          )}
+         </div>
++      </div>
+ 
+-        <div className="panel chart-panel clause-panel">
+-          <div className="panel-header"><div><h3>Most-violated clause</h3><p className="muted">All six compliance rules across the selected dataset.</p></div><span className="count">{topClause.value} top failures</span></div>
+-          <div className="chart-box clause-chart">
+-            <ResponsiveContainer width="100%" height="100%"><BarChart data={clauseValues} layout="vertical" margin={{ top: 5, right: 20, left: 35, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} /><YAxis type="category" dataKey="name" width={105} tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="value" name="Failures" radius={[0,4,4,0]}>{clauseValues.map((entry) => <Cell key={entry.name} />)}</Bar></BarChart></ResponsiveContainer>
+-          </div>
++      <div className="breakdown-grid">
++        <div className="panel">
++          <div className="panel-header"><div><h3>Violations by brand</h3></div></div>
++          {brandData.length ? (
++            <div className="bars">
++              {brandData.map((row) => (
++                <div className="bar-row" key={row.name}>
++                  <span>{row.name}</span>
++                  <div><i style={{ width: `${pct(row.value, brandData[0].value)}%` }} /></div>
++                  <span>{row.value}</span>
++                </div>
++              ))}
++            </div>
++          ) : <p className="muted">No brand violations in this selection.</p>}
+         </div>
+-
+-        <div className="panel chart-panel compliance-panel">
+-          <div className="panel-header"><div><h3>Compliance mix</h3><p className="muted">Overall outcome of the selected scans.</p></div></div>
+-          <div className="donut-wrap">
+-            {stats?.total_scans ? <><ResponsiveContainer width="58%" height="100%"><PieChart><Pie data={complianceData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={82} paddingAngle={3}>{complianceData.map((entry) => <Cell key={entry.name} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer><div className="donut-legend">{complianceData.map((item) => <div key={item.name}><i /> <span>{item.name}</span><strong>{item.value}</strong></div>)}</div></> : <div className="empty-chart">No scans in this selection.</div>}
+-          </div>
++        <div className="panel">
++          <div className="panel-header"><div><h3>Violations by region</h3></div></div>
++          {regionData.length ? (
++            <div className="bars">
++              {regionData.map((row) => (
++                <div className="bar-row" key={row.name}>
++                  <span>{row.name}</span>
++                  <div><i style={{ width: `${pct(row.value, regionData[0].value)}%` }} /></div>
++                  <span>{row.value}</span>
++                </div>
++              ))}
++            </div>
++          ) : <p className="muted">No regional violations in this selection.</p>}
+         </div>
+       </div>
+ 
+       <div className="dashboard-grid">
+         <div className="panel">
+-          <div className="panel-header"><div><h3>Recent scans</h3><p className="muted">Records available to this account.</p></div><button className="text-button" onClick={() => navigate('products')}>View all</button></div>
+-          <div className="table-wrap"><table><thead><tr><th>Scan</th><th>Product</th><th>Status</th><th>Violations</th><th>Date</th></tr></thead><tbody>
+-            {filteredRecentScans.slice(0, 8).map((s) => <tr key={s.scan_id} onClick={() => { localStorage.setItem('labelix_last_scan', String(s.scan_id)); navigate('inspection-result'); }}><td>#{s.scan_id}</td><td><strong>{s.product_name || 'Unnamed product'}</strong><small>{s.brand || 'No brand'}</small></td><td><span className={`status ${s.overall_status === 'compliant' ? 'good' : s.overall_status === 'non-compliant' ? 'bad' : 'neutral'}`}>{fmt(s.overall_status)}</span></td><td>{s.violations}</td><td>{new Date(s.created_at).toLocaleDateString()}</td></tr>)}
+-            {!filteredRecentScans.length && <tr><td colSpan={5} className="empty-table">No scans match the current filters.</td></tr>}
+-          </tbody></table></div>
++          <div className="panel-header"><div><h3>Recent inspections</h3><p className="muted">Latest scans from your activity.</p></div><button className="text-button" onClick={() => navigate('products')}>View all →</button></div>
++          <div className="table-wrap">
++            <table>
++              <thead><tr><th>Scan ID</th><th>Product</th><th>Category</th><th>Result</th><th>Review</th><th>Date</th><th>Actions</th></tr></thead>
++              <tbody>
++                {filteredRecentScans.slice(0, 8).map((s) => (
++                  <tr key={s.scan_id} onClick={() => goToScan(s.scan_id)}>
++                    <td>#{s.scan_id}</td>
++                    <td><strong>{s.product_name || 'Unnamed product'}</strong><small>{s.brand || 'No brand'}</small></td>
++                    <td>{s.category || '—'}</td>
++                    <td><span className={`status ${s.overall_status === 'compliant' ? 'good' : s.overall_status === 'non-compliant' ? 'bad' : 'neutral'}`}>{fmt(s.overall_status)}</span></td>
++                    <td>{s.needs_human_review ? <span className="status warn">Required</span> : '—'}</td>
++                    <td>{new Date(s.created_at).toLocaleDateString()}</td>
++                    <td className="row-actions" onClick={(e) => e.stopPropagation()}>
++                      <button className="icon-action" title="View result" onClick={() => goToScan(s.scan_id)}>view</button>
++                      {s.overall_status && (
++                        <button
++                          className="icon-action"
++                          title="Download PDF report"
++                          onClick={() => downloadAuthenticated(api.reportUrl(s.scan_id, 'pdf'), `scan_${s.scan_id}_report.pdf`)}
++                        >
++                          pdf
++                        </button>
++                      )}
++                    </td>
++                  </tr>
++                ))}
++                {!filteredRecentScans.length && <tr><td colSpan={7} className="empty-table">No scans match the current filters.</td></tr>}
++              </tbody>
++            </table>
++          </div>
+         </div>
+         <div className="side-stack">
+-          <div className="panel"><div className="panel-header"><h3>Review queue</h3><span className="count">{review.length}</span></div>{review.slice(0,5).map((r) => <div className="queue-row" key={r.scan_id}><div><strong>#{r.scan_id} · {r.product_name || 'Unnamed'}</strong><p>{r.reason}</p></div><span className="status neutral">{r.confidence}</span></div>)}{!review.length && <p className="muted">No scans currently require manual review.</p>}</div>
+-          <div className="panel"><div className="panel-header"><div><h3>Priority queue</h3><p className="muted">Higher score = stronger inspection signal.</p></div></div>{priority.slice(0,5).map((p) => <div className="queue-row" key={p.scan_id}><div><strong>#{p.scan_id} · {p.product_name || 'Unnamed'}</strong><p>{p.reason}</p></div><strong className="priority-score">{p.priority_score}</strong></div>)}{!priority.length && <p className="muted">No non-compliant scans are currently prioritized.</p>}</div>
++          <div className="panel">
++            <div className="panel-header"><h3>Review priority</h3><span className="count">{stats?.human_review_count ?? review.length}</span></div>
++            <p className="muted" style={{ marginBottom: 10 }}>
++              {stats?.human_review_count
++                ? `${stats.human_review_count} inspection${stats.human_review_count === 1 ? '' : 's'} in the selected range need${stats.human_review_count === 1 ? 's' : ''} human review.`
++                : 'No inspections currently require manual review.'}
++            </p>
++            {review.slice(0, 5).map((r) => (
++              <div className="queue-row clickable" key={r.scan_id} onClick={() => goToScan(r.scan_id)}>
++                <div><strong>#{r.scan_id} · {r.product_name || 'Unnamed'}</strong><p>{r.reason}</p></div>
++                <span className="status warn">{r.confidence}</span>
++              </div>
++            ))}
++          </div>
++          <div className="panel">
++            <div className="panel-header"><div><h3>Priority queue</h3><p className="muted">Higher score = stronger inspection signal.</p></div></div>
++            {priority.slice(0, 5).map((p) => (
++              <div className="queue-row clickable" key={p.scan_id} onClick={() => goToScan(p.scan_id)}>
++                <div><strong>#{p.scan_id} · {p.product_name || 'Unnamed'}</strong><p>{p.reason}</p></div>
++                <strong className="priority-score">{p.priority_score}</strong>
++              </div>
++            ))}
++            {!priority.length && <p className="muted">No non-compliant scans are currently prioritized.</p>}
++          </div>
+         </div>
+       </div>
+ 
+diff --git a/Labelix Frontend/src/index.css b/Labelix Frontend/src/index.css
+index e76386e..d1a875a 100644
+--- a/Labelix Frontend/src/index.css	
++++ b/Labelix Frontend/src/index.css	
+@@ -130,3 +130,47 @@ body{background:var(--bg);color:var(--ink)}
+ @media(max-width:1000px){
+   .top-bar{display:none}
+ }
++
++/* ======================================================================
++   DASHBOARD / OVERVIEW REDESIGN — additive, reuses shell tokens above
++   ====================================================================== */
++
++.compact-stat-grid{grid-template-columns:repeat(4,1fr)}
++.compact-stat-grid .stat-card{display:flex;align-items:center;gap:12px;padding:14px 16px}
++.stat-icon{width:34px;height:34px;border-radius:var(--radius-sm);display:grid;place-items:center;font-size:15px;flex:none}
++.compact-stat-grid .stat-card span{font-size:11px;color:var(--muted)}
++.compact-stat-grid .stat-card strong{font-size:20px;margin-top:2px}
++.compact-stat-grid .stat-card small{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}
++
++.overview-grid{grid-template-columns:1.7fr 1fr}
++.activity-panel .panel-header{align-items:center}
++.volume-figure{text-align:right}
++.volume-figure strong{display:block;font-size:20px;line-height:1.1}
++.volume-figure span{font-size:10.5px;color:var(--muted)}
++.mix-row{display:flex;align-items:center;gap:16px;margin-top:10px;padding-top:14px;border-top:1px solid var(--line-soft)}
++.mix-row .donut-legend{flex:1;gap:8px}
++.mix-row .donut-legend div{grid-template-columns:8px 1fr auto;font-size:11px}
++.mix-row .donut-legend i{width:7px;height:7px;border-radius:50%}
++.dot-good{background:var(--green)}
++.dot-bad{background:var(--red)}
++.dot-warn{background:var(--amber)}
++.slice-good{fill:var(--green)}
++.slice-bad{fill:var(--red)}
++
++.breakdown-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
++.bar-row i{background:var(--accent)}
++
++.row-actions{display:flex;gap:6px}
++.icon-action{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:var(--radius-sm);font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:4px 7px;font-family:'IBM Plex Mono',monospace}
++.icon-action:hover{border-color:var(--accent);color:var(--accent-hover)}
++.queue-row.clickable{cursor:pointer}
++.queue-row.clickable:hover{background:var(--surface-soft)}
++
++@media(max-width:1100px){
++  .overview-grid{grid-template-columns:1fr}
++  .breakdown-grid{grid-template-columns:1fr}
++}
++@media(max-width:650px){
++  .compact-stat-grid{grid-template-columns:1fr 1fr}
++  .mix-row{flex-direction:column;align-items:flex-start}
++}

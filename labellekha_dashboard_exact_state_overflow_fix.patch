@@ -1,0 +1,23 @@
+--- a/Labelix Frontend/src/index.css
++++ b/Labelix Frontend/src/index.css
+@@ -220,3 +220,20 @@
+   .severity-hero{grid-template-columns:1fr}
+   .activity-panel-lg .chart-box-lg{height:220px}
+ }
++
++ /* ---------- exact-state dashboard overflow guard ---------- */
++ .content{width:100%;max-width:1240px;box-sizing:border-box;min-width:0}
++ .kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr));min-width:0}
++ .primary-analytics-grid{grid-template-columns:minmax(0,1.75fr) minmax(260px,1fr);min-width:0;width:100%;box-sizing:border-box}
++ .severity-hero{grid-template-columns:repeat(4,minmax(0,1fr));min-width:0}
++ .priority-panel-full,.recent-inspections-panel{min-width:0;width:100%;box-sizing:border-box}
++ .priority-list-full{grid-template-columns:repeat(2,minmax(0,1fr));min-width:0}
++ .priority-row-compact{min-width:0}
++ .priority-row-compact span:last-child{min-width:0;flex:1}
++ .breakdown-grid{grid-template-columns:repeat(4,minmax(0,1fr));width:100%;box-sizing:border-box}
++ .compact-table{max-width:100%;overflow-x:auto}
++ .compact-table table{min-width:760px}
++ @media(max-width:1200px){
++   .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
++   .breakdown-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
++ }

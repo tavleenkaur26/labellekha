@@ -1,0 +1,206 @@
+diff --git a/Labelix Frontend/src/components/AppShell.tsx b/Labelix Frontend/src/components/AppShell.tsx
+index f2107a7..dc8e5cb 100644
+--- a/Labelix Frontend/src/components/AppShell.tsx	
++++ b/Labelix Frontend/src/components/AppShell.tsx	
+@@ -1,14 +1,25 @@
+ import { useState } from 'react';
+-import Sidebar from './Sidebar';
++import Sidebar, { navItems } from './Sidebar';
+ import type { NavigateFn, Page, UserSession } from '../types';
+ 
+ export default function AppShell({ page, navigate, children, session }: { page: Page; navigate: NavigateFn; children: React.ReactNode; session: UserSession | null }) {
+   const [open, setOpen] = useState(false);
++  const currentLabel = navItems.find((item) => item.id === page)?.label || 'Dashboard';
+   return <div className="app-shell">
+     <div className={`mobile-drawer ${open ? 'open' : ''}`}><div className="drawer-backdrop" onClick={() => setOpen(false)} /><Sidebar page={page} navigate={(p) => { navigate(p); setOpen(false); }} session={session} /></div>
+     <aside className="desktop-sidebar"><Sidebar page={page} navigate={navigate} session={session} /></aside>
+     <section className="main-area">
+       <header className="mobile-header"><button className="icon-button" onClick={() => setOpen(true)} aria-label="Open navigation">☰</button><strong>LabelLekha</strong></header>
++      <header className="top-bar">
++        <span className="top-bar-title">{currentLabel}</span>
++        <div className="top-bar-user">
++          <span className="avatar">{(session?.name || 'U').slice(0, 1).toUpperCase()}</span>
++          <div>
++            <strong>{session?.name || 'Signed in user'}</strong>
++            <small>{session?.role || 'user'}</small>
++          </div>
++        </div>
++      </header>
+       <main className="page-scroll">{children}</main>
+     </section>
+   </div>;
+diff --git a/Labelix Frontend/src/components/Sidebar.tsx b/Labelix Frontend/src/components/Sidebar.tsx
+index 6506e17..ba01ac7 100644
+--- a/Labelix Frontend/src/components/Sidebar.tsx	
++++ b/Labelix Frontend/src/components/Sidebar.tsx	
+@@ -1,6 +1,9 @@
+ import type { NavigateFn, Page, UserSession } from '../types';
+ 
+-const items: Array<{ id: Page; label: string; icon: string }> = [
++// Nav item ids/routes are unchanged from before the redesign — only label
++// copy and icon glyphs are cosmetic. Exported so AppShell's top bar can
++// look up the current page's label without duplicating this list.
++export const navItems: Array<{ id: Page; label: string; icon: string }> = [
+   { id: 'dashboard', label: 'Dashboard', icon: '⌂' },
+   { id: 'new-scan', label: 'New scan', icon: '＋' },
+   { id: 'products', label: 'Search & history', icon: '⌕' },
+@@ -10,10 +13,24 @@ const items: Array<{ id: Page; label: string; icon: string }> = [
+   { id: 'settings', label: 'Settings', icon: '⚙' },
+ ];
+ 
++function BrandMark() {
++  return (
++    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
++      <path
++        d="M4 14C4 8 8 3.5 14.5 3.5C14.5 10 10.5 14 4 14Z"
++        stroke="currentColor"
++        strokeWidth="1.4"
++        strokeLinejoin="round"
++      />
++      <path d="M4 14C7 11.5 10 9 13.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
++    </svg>
++  );
++}
++
+ export default function Sidebar({ page, navigate, session }: { page: Page; navigate: NavigateFn; session: UserSession | null }) {
+   return <aside className="sidebar">
+-    <button className="brand" onClick={() => navigate('dashboard')}><span className="brand-mark">LL</span><span><strong>LabelLekha</strong><small>Label compliance</small></span></button>
+-    <nav><div className="nav-label">Workspace</div>{items.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => navigate(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav>
++    <button className="brand" onClick={() => navigate('dashboard')}><span className="brand-mark"><BrandMark /></span><span><strong>LabelLekha</strong><small>Legal Metrology</small></span></button>
++    <nav><div className="nav-label">Workspace</div>{navItems.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => navigate(item.id)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}</nav>
+     <div className="sidebar-footer"><div className="user-mini"><span className="avatar">{(session?.name || 'U').slice(0,1).toUpperCase()}</span><div><strong>{session?.name || 'Signed in user'}</strong><small>{session?.role || 'user'}</small></div></div><button className="logout" onClick={() => { localStorage.removeItem('labelix_token'); localStorage.removeItem('labelix_user'); window.location.reload(); }}>Sign out</button></div>
+   </aside>;
+ }
+diff --git a/Labelix Frontend/src/index.css b/Labelix Frontend/src/index.css
+index 2cc8552..e76386e 100644
+--- a/Labelix Frontend/src/index.css	
++++ b/Labelix Frontend/src/index.css	
+@@ -1,5 +1,8 @@
+ @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+ @import 'tailwindcss';
++/* NOTE: shell redesign tokens + overrides live in the appended block at the
++   bottom of this file (search "GLOBAL SHELL REDESIGN") so the original,
++   working page-level rules above stay intact and diffable. */
+ 
+ :root{font-family:'DM Sans',system-ui,sans-serif;color:#17202a;background:#f6f7f9;font-synthesis:none;text-rendering:optimizeLegibility;--ink:#17202a;--muted:#66727e;--line:#dfe4e8;--surface:#fff;--soft:#f1f4f6;--green:#1d7a53;--green-bg:#eaf6ef;--red:#a43d3d;--red-bg:#faeded;--blue:#245f86;--blue-bg:#edf5fa;}
+ *{box-sizing:border-box}html,body,#root{margin:0;min-height:100%;height:100%}body{background:#f6f7f9;color:var(--ink)}button,input,select{font:inherit}button,a{cursor:pointer}a{text-decoration:none;color:inherit}.app-shell{height:100vh;display:flex;overflow:hidden}.desktop-sidebar{width:250px;flex:none}.sidebar{height:100%;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:22px 14px}.brand,.brand-inline{display:flex;align-items:center;gap:10px}.brand{border:0;background:none;text-align:left;padding:5px 8px 22px;width:100%}.brand-mark{width:34px;height:34px;border:1px solid #cfd6dc;border-radius:8px;display:grid;place-items:center;font:500 12px 'IBM Plex Mono',monospace;background:#f8fafb;color:#26333d}.brand strong{display:block;font-size:15px;letter-spacing:-.02em}.brand small,.user-mini small{display:block;color:#7b8790;font-size:11px;margin-top:2px}.sidebar nav{flex:1}.nav-label,.eyebrow{font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.12em;color:#7b8790;text-transform:uppercase}.nav-label{padding:12px 10px 8px}.nav-item{width:100%;border:0;background:transparent;color:#5e6973;display:flex;align-items:center;gap:11px;padding:10px;border-radius:7px;text-align:left;margin:2px 0;font-size:13px}.nav-item:hover{background:#f3f5f6;color:var(--ink)}.nav-item.active{background:#edf2f5;color:#17202a;font-weight:600}.nav-icon{width:18px;text-align:center;color:#7a8791}.sidebar-footer{border-top:1px solid var(--line);padding-top:14px}.user-mini{display:flex;gap:9px;align-items:center;padding:6px}.user-mini strong{font-size:12px;display:block}.avatar{width:28px;height:28px;border-radius:50%;background:#e9edf0;display:grid;place-items:center;font-size:11px;font-weight:700}.logout{border:0;background:none;color:#7a8791;font-size:12px;padding:10px 6px}.main-area{min-width:0;flex:1}.page-scroll{height:100%;overflow:auto}.content{max-width:1240px;margin:0 auto;padding:38px 42px 64px}.page-heading{display:flex;justify-content:space-between;align-items:end;margin-bottom:26px}.page-heading h1{font-size:28px;line-height:1.1;letter-spacing:-.035em;margin:8px 0 7px}.page-heading p{margin:0;color:var(--muted);font-size:14px}.toolbar{display:flex;justify-content:flex-end;margin:-6px 0 16px}.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;box-shadow:0 1px 2px rgba(23,32,42,.03)}.panel.narrow{max-width:620px}.panel h3{font-size:15px;margin:0 0 5px}.muted{color:var(--muted);font-size:13px;line-height:1.55}.primary-button,.secondary-button{display:inline-flex;align-items:center;justify-content:center;border-radius:7px;padding:10px 15px;font-size:13px;font-weight:600;border:1px solid transparent}.primary-button{background:#17202a;color:#fff}.primary-button:hover{background:#27343f}.primary-button.small{padding:8px 12px;font-size:12px}.secondary-button{background:#fff;border-color:#cfd7dd;color:#35414a}.text-button{border:0;background:none;color:#245f86;font-size:12px;padding:0}.error-box{background:#fff3f3;border:1px solid #efcccc;color:#923c3c;border-radius:7px;padding:10px 12px;font-size:12px;margin:12px 0}.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}.stat-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:17px}.stat-card span{display:block;color:#737f88;font-size:12px}.stat-card strong{display:block;font-size:24px;letter-spacing:-.04em;margin-top:7px}.dashboard-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;margin-bottom:14px}.side-stack{display:flex;flex-direction:column;gap:14px}.panel-header{display:flex;justify-content:space-between;gap:16px;align-items:start;margin-bottom:15px}.panel-header h3{margin:0}.count{background:#edf1f3;border-radius:99px;padding:4px 8px;font:500 11px 'IBM Plex Mono',monospace}.table-wrap{overflow:auto}.table-wrap table{width:100%;border-collapse:collapse;font-size:12px}.table-wrap th{text-align:left;color:#7b8790;font-weight:600;padding:10px 9px;border-bottom:1px solid var(--line);white-space:nowrap}.table-wrap td{padding:12px 9px;border-bottom:1px solid #edf0f2;vertical-align:middle}.table-wrap tbody tr{cursor:pointer}.table-wrap tbody tr:hover{background:#fafbfb}.table-wrap td small{display:block;color:#87929a;margin-top:2px}.status{display:inline-flex;padding:4px 7px;border-radius:5px;font:500 10px 'IBM Plex Mono',monospace;text-transform:uppercase;white-space:nowrap}.status.good{color:var(--green);background:var(--green-bg)}.status.bad{color:var(--red);background:var(--red-bg)}.status.neutral{color:#5e6b75;background:#eef1f3}.queue-row{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid #edf0f2}.queue-row strong{font-size:12px}.queue-row p{margin:3px 0 0;color:var(--muted);font-size:11px;line-height:1.4}.priority-score{font:600 13px 'IBM Plex Mono',monospace}.bars{display:flex;flex-direction:column;gap:11px}.bar-row{display:grid;grid-template-columns:125px 1fr 32px;gap:10px;align-items:center;font-size:11px}.bar-row div{height:8px;background:#eef1f3;border-radius:5px;overflow:hidden}.bar-row i{display:block;height:100%;background:#516a79;border-radius:5px}.scan-layout{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.upload-panel{padding:14px}.dropzone{height:430px;border:1px dashed #bdc7ce;border-radius:8px;background:#fafbfc;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#56636d;text-align:center;overflow:hidden}.dropzone img{width:100%;height:100%;object-fit:contain;background:#f3f5f6}.upload-symbol{font-size:28px;color:#7a8790}.dropzone span{font-size:12px;color:#8a959d}.file-row{display:flex;justify-content:space-between;padding:10px 3px 2px;font-size:12px;color:#59656e}.form-panel label,.narrow label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#56626c;font-weight:600}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.form-panel input,.form-panel select,.filters input,.filters select,.narrow input{width:100%;border:1px solid #ccd5db;border-radius:7px;background:#fff;padding:10px 11px;color:var(--ink);outline:none}.form-panel input:focus,.form-panel select:focus,.filters input:focus,.filters select:focus,.narrow input:focus{border-color:#8ca7b8;box-shadow:0 0 0 3px #edf4f7}.check-row{display:flex!important;flex-direction:row!important;align-items:flex-start;gap:8px;margin:16px 0!important;font-weight:400!important}.check-row input{width:auto;margin-top:2px}.processing-page{height:100%;display:grid;place-items:center;background:#f6f7f9}.processing-card{text-align:center;background:#fff;border:1px solid var(--line);border-radius:12px;padding:42px;min-width:330px}.processing-card h1{font-size:22px;margin:12px 0 5px}.processing-card p{color:var(--muted);font-size:13px}.spinner{width:32px;height:32px;border:2px solid #dfe4e8;border-top-color:#25343e;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 18px}@keyframes spin{to{transform:rotate(360deg)}}.result-top{display:grid;grid-template-columns:1fr 1fr 220px;gap:12px;margin-bottom:14px}.score-card,.meta-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:19px}.score-card strong{display:block;font-size:25px;margin:6px 0 15px}.good-text{color:var(--green)}.bad-text{color:var(--red)}.score-line{height:7px;background:#edf0f2;border-radius:5px;overflow:hidden}.score-line span{display:block;height:100%;background:#357457}.score-card small{display:block;color:#7b8790;margin-top:7px;font-size:11px}.meta-card{display:grid;gap:12px}.meta-card span,.meta-card strong{display:block}.meta-card span{font-size:10px;color:#7b8790;text-transform:uppercase;letter-spacing:.08em}.meta-card strong{font-size:12px;margin-top:3px}.result-image{width:100%;height:150px;object-fit:cover;background:#eef1f3;border:1px solid var(--line);border-radius:10px}.actions{display:flex;gap:8px}.checks{display:flex;flex-direction:column}.check-row-card{display:flex;justify-content:space-between;gap:20px;border-top:1px solid #edf0f2;padding:15px 0}.check-main{display:flex;gap:12px;min-width:0}.check-main strong{font-size:13px}.check-main p{margin:5px 0;color:#5f6b74;font-size:12px;line-height:1.5}.check-main small{color:#8a5656;font-size:11px}.confidence{font:500 10px 'IBM Plex Mono',monospace;color:#6d7880;text-transform:uppercase;white-space:nowrap}.confidence span{display:block;margin-top:6px;color:var(--red)}.filters{display:grid;grid-template-columns:1fr 190px;gap:10px;margin-bottom:15px}.report-list{display:flex;flex-direction:column}.report-row{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:15px 0;border-top:1px solid #edf0f2}.report-row strong{font-size:13px}.report-row p{margin:4px 0 0;color:var(--muted);font-size:11px}.assistant-grid{display:grid;grid-template-columns:1fr 340px;gap:14px}.assistant-list>div{padding:13px 0;border-top:1px solid #edf0f2}.assistant-list strong{font-size:12px}.assistant-list p{font-size:12px;color:var(--muted);line-height:1.5}.plain-list{padding-left:19px;color:#59656e;font-size:12px;line-height:1.9}.settings-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:16px}.mobile-header,.mobile-drawer{display:none}.auth-page{min-height:100vh;background:#f4f6f7;display:grid;grid-template-columns:1fr 430px;gap:70px;align-items:center;padding:70px max(7vw,32px)}.auth-copy{max-width:650px}.auth-copy h1{font-size:52px;line-height:1.03;letter-spacing:-.055em;margin:14px 0 20px}.auth-copy p{font-size:16px;color:#64717a;line-height:1.65;max-width:580px}.trust-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:28px}.trust-row span{border:1px solid #d6dde1;background:#fff;border-radius:5px;padding:7px 9px;font:500 10px 'IBM Plex Mono',monospace;color:#5e6972}.auth-card{background:#fff;border:1px solid #dfe4e8;border-radius:12px;padding:28px;box-shadow:0 12px 35px rgba(30,42,50,.06)}.brand-inline{margin-bottom:30px}.auth-card h2{font-size:24px;margin:0 0 5px}.auth-card form{margin-top:20px}.auth-card label{display:flex;flex-direction:column;gap:6px;color:#56626c;font-size:12px;font-weight:600;margin-bottom:13px}.auth-card input,.auth-card select{border:1px solid #ccd5db;border-radius:7px;padding:11px;background:#fff;outline:none}.auth-card .primary-button{width:100%;margin-top:4px}.auth-card .text-button{margin:18px auto 0;display:block}.auth-card .error-box{margin:8px 0}.mobile-header{height:56px;border-bottom:1px solid var(--line);background:#fff;align-items:center;padding:0 16px;gap:10px}.icon-button{border:0;background:none;font-size:20px;color:#52606a}
+@@ -11,3 +14,119 @@
+ .dashboard-toolbar{justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}.filter-group{display:flex;align-items:end;gap:8px;flex-wrap:wrap}.filter-group label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:#69757e;font-weight:600}.filter-group input,.filter-group select{border:1px solid #ccd5db;border-radius:7px;background:#fff;padding:8px 9px;font-size:12px;color:var(--ink);min-height:34px}.secondary-button.small{padding:8px 11px;font-size:12px}.priority-banner{display:flex;justify-content:space-between;align-items:center;gap:20px;background:#fff;border:1px solid #cfd9df;border-left:4px solid #526a79;border-radius:10px;padding:18px 20px;margin-bottom:14px}.priority-banner h3{margin:5px 0 5px;font-size:16px}.priority-banner p{margin:0;max-width:760px;color:var(--muted);font-size:12px;line-height:1.55}.priority-banner-score{text-align:right;min-width:100px}.priority-banner-score strong{display:block;font:600 28px 'IBM Plex Mono',monospace}.priority-banner-score span{font-size:10px;color:#7b8790}.analytics-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:14px}.chart-panel{min-width:0}.chart-box{height:270px;width:100%}.clause-chart{height:300px}.empty-chart{height:100%;display:grid;place-items:center;color:#8a959d;font-size:12px;background:#fafbfc;border-radius:7px}.compliance-panel{grid-column:auto}.donut-wrap{height:270px;display:flex;align-items:center;justify-content:center}.donut-legend{display:flex;flex-direction:column;gap:12px;min-width:130px}.donut-legend div{display:grid;grid-template-columns:10px 1fr auto;gap:7px;align-items:center;font-size:11px}.donut-legend i{width:8px;height:8px;border-radius:50%;background:#607482}.donut-legend strong{font-family:'IBM Plex Mono',monospace}.empty-table{text-align:center;color:#8a959d;padding:28px!important}.dashboard-loading{position:fixed;right:22px;bottom:18px;background:#17202a;color:#fff;border-radius:7px;padding:8px 11px;font-size:11px;box-shadow:0 5px 20px rgba(0,0,0,.12)}
+ @media(max-width:850px){.analytics-grid{grid-template-columns:1fr}.priority-banner{align-items:flex-start}.priority-banner-score{text-align:left}.dashboard-toolbar{align-items:stretch}.filter-group{width:100%}.filter-group label{flex:1;min-width:120px}}
+ @media(max-width:650px){.filter-group{display:grid;grid-template-columns:1fr 1fr;width:100%}.filter-group label{min-width:0}.filter-group .secondary-button{grid-column:1}.filter-group .text-button{align-self:center}.priority-banner{flex-direction:column}.chart-box{height:250px}.clause-chart{height:285px}.donut-wrap{height:240px}}
++
++/* ======================================================================
++   GLOBAL SHELL REDESIGN — professional / regulatory olive-charcoal system
++   Appended deliberately (rather than rewriting rules above in place) so
++   the original working styles remain visible for diffing. Everything
++   below re-targets shared/shell selectors only; no page-specific layout
++   classes (scan-layout, dashboard-grid, assistant-grid, etc.) are altered.
++   ====================================================================== */
++
++:root{
++  --bg:#ffffff;
++  --surface:#ffffff;
++  --surface-soft:#f5f6f3;
++  --sidebar-bg:#2f3626;
++  --sidebar-active:#3c4630;
++  --sidebar-text:#c7cfb9;
++  --sidebar-text-dim:#8d9a78;
++  --accent:#6b7a3f;
++  --accent-hover:#57642f;
++  --accent-soft:#eef1e6;
++  --ink:#1f2420;
++  --muted:#5b6058;
++  --line:#dcdfd6;
++  --line-soft:#ececea;
++  --radius-sm:4px;
++  --radius-md:6px;
++
++  /* re-point legacy tokens so existing page-level classes that already
++     reference var(--green)/var(--red) (good-text, bad-text, score-line,
++     status.good/bad) automatically pick up the muted regulatory palette */
++  --green:#3f6b4a;      --green-bg:#e9f1e9;
++  --red:#8a3f3a;         --red-bg:#f6ebe9;
++  --amber:#8a6a2c;       --amber-bg:#f7f0e2;
++
++  color:var(--ink);
++  background:var(--bg);
++}
++
++body{background:var(--bg);color:var(--ink)}
++
++/* ---------- typography ---------- */
++.page-heading h1,.auth-copy h1,.landing-main h1{letter-spacing:-.01em;font-weight:700}
++.page-heading h1{font-size:22px}
++.panel h3,.score-card,.meta-card{letter-spacing:0}
++
++/* ---------- sidebar / branding ---------- */
++.sidebar{background:var(--sidebar-bg);border-right:0;color:var(--sidebar-text);padding:18px 12px}
++.sidebar .brand{padding:6px 8px 20px}
++.sidebar .brand-mark{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);color:#fff}
++.sidebar .brand strong{color:#fff}
++.sidebar .brand small{color:var(--sidebar-text-dim)}
++.sidebar .nav-label{color:var(--sidebar-text-dim)}
++.sidebar .nav-item{color:var(--sidebar-text);border-radius:var(--radius-sm);border-left:3px solid transparent;padding:9px 10px 9px 7px}
++.sidebar .nav-item:hover{background:var(--sidebar-active);color:#fff}
++.sidebar .nav-item.active{background:var(--sidebar-active);color:#fff;font-weight:600;border-left-color:var(--accent)}
++.sidebar .nav-icon{color:var(--sidebar-text-dim)}
++.sidebar .nav-item.active .nav-icon,.sidebar .nav-item:hover .nav-icon{color:#fff}
++.sidebar-footer{border-top-color:rgba(255,255,255,.14)}
++.user-mini strong{color:#fff}
++.user-mini small{color:var(--sidebar-text-dim)}
++.avatar{background:rgba(255,255,255,.12);color:#fff}
++.logout{color:var(--sidebar-text-dim)}
++.logout:hover{color:#fff}
++
++/* ---------- top bar (new global shell element) ---------- */
++.main-area{display:flex;flex-direction:column}
++.page-scroll{flex:1;min-height:0;height:auto}
++.top-bar{display:flex;align-items:center;justify-content:space-between;height:54px;flex:none;padding:0 30px;border-bottom:1px solid var(--line);background:var(--surface)}
++.top-bar-title{font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
++.top-bar-user{display:flex;align-items:center;gap:9px}
++.top-bar-user .avatar{width:28px;height:28px;background:var(--accent-soft);color:var(--accent-hover)}
++.top-bar-user strong{display:block;font-size:12px;line-height:1.3}
++.top-bar-user small{display:block;font-size:10.5px;color:var(--muted);text-transform:capitalize}
++
++/* ---------- buttons ---------- */
++.primary-button,.secondary-button{border-radius:var(--radius-sm)}
++.primary-button{background:var(--accent);color:#fff}
++.primary-button:hover{background:var(--accent-hover)}
++.secondary-button{background:#fff;border-color:var(--line);color:var(--ink)}
++.secondary-button:hover{background:var(--surface-soft)}
++.text-button{color:var(--accent-hover)}
++.text-button:hover{color:var(--accent)}
++
++/* ---------- status badges ---------- */
++.status{border-radius:3px;font-weight:600;letter-spacing:.04em}
++.status.good{color:var(--green);background:var(--green-bg)}
++.status.bad{color:var(--red);background:var(--red-bg)}
++.status.neutral{color:var(--muted);background:var(--surface-soft)}
++.status.warn,.status.review{color:var(--amber);background:var(--amber-bg)}
++
++/* ---------- surfaces / panels / borders ---------- */
++.panel,.stat-card,.auth-card,.processing-card,.priority-banner{border-radius:var(--radius-md);box-shadow:none;border-color:var(--line)}
++.priority-banner{border-left-color:var(--accent)}
++.count{background:var(--surface-soft);color:var(--muted)}
++.table-wrap th{color:var(--muted)}
++.table-wrap tbody tr:hover{background:var(--surface-soft)}
++
++/* ---------- inputs (restated at matching/higher specificity so focus
++   rings and borders switch to the olive accent everywhere they appear) --- */
++.form-panel input,.form-panel select,.filters input,.filters select,.narrow input,
++.auth-card input,.auth-card select,.filter-group input,.filter-group select{
++  border-radius:var(--radius-sm);border-color:var(--line);
++}
++.form-panel input:focus,.form-panel select:focus,.filters input:focus,.filters select:focus,.narrow input:focus,
++.auth-card input:focus,.auth-card select:focus{
++  border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);
++}
++
++/* ---------- mobile header ---------- */
++.mobile-header{background:var(--sidebar-bg);border-bottom:0}
++.mobile-header strong{color:#fff}
++.icon-button{color:#fff}
++
++@media(max-width:1000px){
++  .top-bar{display:none}
++}

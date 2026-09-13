@@ -1,0 +1,252 @@
+diff --git a/Labelix Frontend/src/pages/Dashboard.tsx b/Labelix Frontend/src/pages/Dashboard.tsx
+index 318d268..e22362d 100644
+--- a/Labelix Frontend/src/pages/Dashboard.tsx	
++++ b/Labelix Frontend/src/pages/Dashboard.tsx	
+@@ -311,85 +311,88 @@ export default function Dashboard({
+         </div>
+       </div>
+ 
+-      {/* ---- Operational information: recent inspections + priority ---- */}
+-      <div className="console-grid">
+-        <div className="panel">
+-          <div className="panel-header">
+-            <div><h3>Recent inspections</h3><p className="muted">Latest scans from your activity.</p></div>
+-            <button className="text-button" onClick={() => navigate('products')}>View all →</button>
++      {/* ---- Inspection priority: distinct, full-width operational section ---- */}
++      <div className="panel priority-panel-full">
++        <div className="panel-header"><h3>Inspection priority</h3></div>
++        <div className="severity-hero">
++          <div className="severity-tile severity-high">
++            <span className="status bad">High priority</span>
++            <strong>{highPriority.length}</strong>
++            <small>Immediate attention required</small>
++          </div>
++          <div className="severity-tile severity-medium">
++            <span className="status warn">Medium priority</span>
++            <strong>{mediumPriority.length}</strong>
++            <small>Should be reviewed soon</small>
++          </div>
++          <div className="severity-tile severity-low">
++            <span className="status neutral">Low priority</span>
++            <strong>{lowPriority.length}</strong>
++            <small>For reference</small>
+           </div>
+-          <div className="table-wrap compact-table">
+-            <table>
+-              <thead><tr><th>Scan ID</th><th>Product</th><th>Brand</th><th>Result</th><th>Issues</th><th>Date</th><th>Actions</th></tr></thead>
+-              <tbody>
+-                {filteredRecentScans.slice(0, 8).map((s) => (
+-                  <tr key={s.scan_id} onClick={() => goToScan(s.scan_id)}>
+-                    <td>#{s.scan_id}</td>
+-                    <td><strong>{s.product_name || 'Unnamed product'}</strong></td>
+-                    <td>{s.brand || '—'}</td>
+-                    <td><span className={`status ${s.overall_status === 'compliant' ? 'good' : s.overall_status === 'non-compliant' ? 'bad' : 'neutral'}`}>{fmt(s.overall_status)}</span></td>
+-                    <td>{s.overall_status === 'compliant' ? '—' : s.violations}</td>
+-                    <td>{new Date(s.created_at).toLocaleDateString()}</td>
+-                    <td className="row-actions" onClick={(e) => e.stopPropagation()}>
+-                      <button className="icon-action" title="View result" onClick={() => goToScan(s.scan_id)}>view</button>
+-                      {s.overall_status && (
+-                        <button
+-                          className="icon-action"
+-                          title="Download PDF report"
+-                          onClick={() => downloadAuthenticated(api.reportUrl(s.scan_id, 'pdf'), `scan_${s.scan_id}_report.pdf`)}
+-                        >
+-                          pdf
+-                        </button>
+-                      )}
+-                    </td>
+-                  </tr>
+-                ))}
+-                {!filteredRecentScans.length && <tr><td colSpan={7} className="empty-table">No scans match the current filters.</td></tr>}
+-              </tbody>
+-            </table>
++          <div className="severity-tile severity-review">
++            <span className="status warn">Review required</span>
++            <strong>{stats?.human_review_count ?? review.length}</strong>
++            <small>{!!stats?.total_scans && `${pct(stats.human_review_count, stats.total_scans)}% of total scans`}</small>
+           </div>
+         </div>
+-
+-        <div className="panel priority-panel">
+-          <div className="panel-header"><h3>Inspection priority</h3></div>
+-          <div className="severity-rows">
+-            <div className="severity-row">
+-              <span className="status bad">High</span>
+-              <div><strong>{highPriority.length}</strong><small>Immediate attention required</small></div>
+-            </div>
+-            <div className="severity-row">
+-              <span className="status warn">Medium</span>
+-              <div><strong>{mediumPriority.length}</strong><small>Should be reviewed soon</small></div>
+-            </div>
+-            <div className="severity-row">
+-              <span className="status neutral">Low</span>
+-              <div><strong>{lowPriority.length}</strong><small>For reference</small></div>
+-            </div>
+-            <div className="severity-row review-row">
+-              <span className="status warn">Review</span>
+-              <div>
+-                <strong>{stats?.human_review_count ?? review.length}</strong>
+-                <small>{!!stats?.total_scans && `${pct(stats.human_review_count, stats.total_scans)}% of total scans`}</small>
++        {(review.length > 0 || priority.length > 0) ? (
++          <div className="priority-list-full">
++            {review.slice(0, 4).map((r) => (
++              <div className="priority-row-compact" key={`rv-${r.scan_id}`} onClick={() => goToScan(r.scan_id)}>
++                <span className="status warn">Review</span>
++                <strong>#{r.scan_id} · {r.product_name || 'Unnamed'}</strong>
++                <span>{r.reason}</span>
+               </div>
+-            </div>
++            ))}
++            {priority.slice(0, 4).map((p) => (
++              <div className="priority-row-compact" key={`pr-${p.scan_id}`} onClick={() => goToScan(p.scan_id)}>
++                <span className="status bad">Priority</span>
++                <strong>#{p.scan_id} · {p.product_name || 'Unnamed'}</strong>
++                <span>score {p.priority_score} · {p.reason}</span>
++              </div>
++            ))}
+           </div>
+-          {(review.length > 0 || priority.length > 0) && (
+-            <div className="priority-list-compact">
+-              {review.slice(0, 3).map((r) => (
+-                <div className="priority-row-compact" key={`rv-${r.scan_id}`} onClick={() => goToScan(r.scan_id)}>
+-                  <strong>#{r.scan_id} · {r.product_name || 'Unnamed'}</strong>
+-                  <span>{r.reason}</span>
+-                </div>
+-              ))}
+-              {priority.slice(0, 3).map((p) => (
+-                <div className="priority-row-compact" key={`pr-${p.scan_id}`} onClick={() => goToScan(p.scan_id)}>
+-                  <strong>#{p.scan_id} · {p.product_name || 'Unnamed'}</strong>
+-                  <span>score {p.priority_score} · {p.reason}</span>
+-                </div>
++        ) : (
++          <p className="muted">No inspections currently require manual review or elevated priority.</p>
++        )}
++      </div>
++
++      {/* ---- Recent inspections: distinct, full-width register, below priority ---- */}
++      <div className="panel recent-inspections-panel">
++        <div className="panel-header">
++          <div><h3>Recent inspections</h3><p className="muted">Latest scans from your activity.</p></div>
++          <button className="text-button" onClick={() => navigate('products')}>View all →</button>
++        </div>
++        <div className="table-wrap compact-table">
++          <table>
++            <thead><tr><th>Scan ID</th><th>Product</th><th>Brand</th><th>Result</th><th>Issues</th><th>Date</th><th>Actions</th></tr></thead>
++            <tbody>
++              {filteredRecentScans.slice(0, 8).map((s) => (
++                <tr key={s.scan_id} onClick={() => goToScan(s.scan_id)}>
++                  <td>#{s.scan_id}</td>
++                  <td><strong>{s.product_name || 'Unnamed product'}</strong></td>
++                  <td>{s.brand || '—'}</td>
++                  <td><span className={`status ${s.overall_status === 'compliant' ? 'good' : s.overall_status === 'non-compliant' ? 'bad' : 'neutral'}`}>{fmt(s.overall_status)}</span></td>
++                  <td>{s.overall_status === 'compliant' ? '—' : s.violations}</td>
++                  <td>{new Date(s.created_at).toLocaleDateString()}</td>
++                  <td className="row-actions" onClick={(e) => e.stopPropagation()}>
++                    <button className="icon-action" title="View result" onClick={() => goToScan(s.scan_id)}>view</button>
++                    {s.overall_status && (
++                      <button
++                        className="icon-action"
++                        title="Download PDF report"
++                        onClick={() => downloadAuthenticated(api.reportUrl(s.scan_id, 'pdf'), `scan_${s.scan_id}_report.pdf`)}
++                      >
++                        pdf
++                      </button>
++                    )}
++                  </td>
++                </tr>
+               ))}
+-            </div>
+-          )}
+-          {!review.length && !priority.length && <p className="muted">No inspections currently require manual review or elevated priority.</p>}
++              {!filteredRecentScans.length && <tr><td colSpan={7} className="empty-table">No scans match the current filters.</td></tr>}
++            </tbody>
++          </table>
+         </div>
+       </div>
+ 
+diff --git a/Labelix Frontend/src/index.css b/Labelix Frontend/src/index.css
+index 0929bc7..77e6418 100644
+--- a/Labelix Frontend/src/index.css	
++++ b/Labelix Frontend/src/index.css	
+@@ -140,7 +140,7 @@ body{background:var(--bg);color:var(--ink)}
+ 
+ /* ---- KPI summary: compact, tinted by status ---- */
+ .kpi-grid{grid-template-columns:repeat(4,1fr)}
+-.kpi-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md)}
++.kpi-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md);min-width:0}
+ .kpi-card .stat-icon{width:34px;height:34px;border-radius:var(--radius-sm);display:grid;place-items:center;font-size:15px;flex:none;background:#fff;border:1px solid var(--line)}
+ .kpi-card span{font-size:11px;color:var(--muted)}
+ .kpi-card strong{display:block;font-size:21px;margin-top:2px}
+@@ -157,6 +157,7 @@ body{background:var(--bg);color:var(--ink)}
+ 
+ /* ---- primary analytics: trend chart + compliance distribution ---- */
+ .primary-analytics-grid{display:grid;grid-template-columns:1.75fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch}
++.primary-analytics-grid>.panel{min-width:0}
+ .activity-panel-lg .chart-box-lg{height:300px}
+ .compliance-panel-lg{display:flex;flex-direction:column}
+ .donut-block{display:flex;flex-direction:column;align-items:center;gap:14px;flex:1;justify-content:center}
+@@ -175,30 +176,29 @@ body{background:var(--bg);color:var(--ink)}
+ .slice-bad{fill:var(--red)}
+ .legend-table i,.donut-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+ 
+-/* ---- operational information: recent inspections + priority ---- */
+-.console-grid{display:grid;grid-template-columns:1.9fr 1fr;gap:14px;align-items:start;margin-bottom:14px}
+-.compact-table th,.compact-table td{padding:7px 10px;font-size:12px}
++/* ---- inspection priority: distinct, full-width operational section ---- */
++.priority-panel-full{margin-bottom:14px}
++.severity-hero{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:10px 0}
++.severity-tile{border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
++.severity-tile strong{font-size:24px;line-height:1.1}
++.severity-tile small{color:var(--muted);font-size:11px}
++.severity-review{background:var(--amber-bg);border-color:transparent}
++.priority-list-full{border-top:1px solid var(--line-soft);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:2px 18px}
++.priority-row-compact{display:flex;align-items:center;gap:9px;padding:6px 4px;font-size:11.5px;cursor:pointer;border-radius:var(--radius-sm)}
++.priority-row-compact:hover{background:var(--surface-soft)}
++.priority-row-compact strong{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;max-width:150px}
++.priority-row-compact span:last-child{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++
++/* ---- recent inspections: distinct, full-width register ---- */
++.recent-inspections-panel{margin-bottom:14px}
++.compact-table th,.compact-table td{padding:8px 12px;font-size:12px}
+ .row-actions{display:flex;gap:6px}
+ .icon-action{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:var(--radius-sm);font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:4px 7px;font-family:'IBM Plex Mono',monospace}
+ .icon-action:hover{border-color:var(--accent);color:var(--accent-hover)}
+ 
+-.priority-panel{display:flex;flex-direction:column;gap:12px}
+-.severity-rows{display:flex;flex-direction:column}
+-.severity-row{display:flex;align-items:center;gap:10px;padding:8px 2px;border-top:1px solid var(--line-soft)}
+-.severity-rows .severity-row:first-child{border-top:0}
+-.severity-row div{display:flex;align-items:baseline;justify-content:space-between;flex:1;gap:8px}
+-.severity-row strong{font-size:14px}
+-.severity-row small{color:var(--muted);font-size:10.5px;text-align:right}
+-.severity-row.review-row{background:var(--amber-bg);border-radius:var(--radius-sm);border-top:0;margin-top:2px;padding:8px 8px}
+-.priority-list-compact{border-top:1px solid var(--line-soft);padding-top:8px;display:flex;flex-direction:column;gap:2px}
+-.priority-row-compact{display:flex;justify-content:space-between;gap:8px;padding:6px 2px;font-size:11px;cursor:pointer;border-radius:var(--radius-sm)}
+-.priority-row-compact:hover{background:var(--surface-soft)}
+-.priority-row-compact strong{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+-.priority-row-compact span{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+-
+ /* ---- secondary analytics: category / brand / region / clause ---- */
+-.breakdown-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+-.compact-panel{padding:13px 15px}
++.breakdown-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;min-width:0}
++.compact-panel{padding:13px 15px;min-width:0}
+ .compact-panel .panel-header{margin-bottom:8px}
+ .compact-bars{gap:8px}
+ .compact-bars .bar-row{grid-template-columns:76px 1fr 24px;font-size:10.5px}
+@@ -209,10 +209,14 @@ body{background:var(--bg);color:var(--ink)}
+ }
+ @media(max-width:1100px){
+   .primary-analytics-grid{grid-template-columns:1fr}
+-  .console-grid{grid-template-columns:1fr}
++}
++@media(max-width:900px){
++  .severity-hero{grid-template-columns:1fr 1fr}
++  .priority-list-full{grid-template-columns:1fr}
+ }
+ @media(max-width:650px){
+   .kpi-grid{grid-template-columns:1fr 1fr}
+   .breakdown-grid{grid-template-columns:1fr}
++  .severity-hero{grid-template-columns:1fr}
+   .activity-panel-lg .chart-box-lg{height:220px}
+ }

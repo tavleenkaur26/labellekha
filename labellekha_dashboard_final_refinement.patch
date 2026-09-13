@@ -1,0 +1,637 @@
+diff --git a/Labelix Frontend/src/pages/Dashboard.tsx b/Labelix Frontend/src/pages/Dashboard.tsx
+index f737599..318d268 100644
+--- a/Labelix Frontend/src/pages/Dashboard.tsx	
++++ b/Labelix Frontend/src/pages/Dashboard.tsx	
+@@ -1,10 +1,16 @@
+ import { useEffect, useMemo, useState } from 'react';
+ import {
++  CartesianGrid,
+   Cell,
++  Legend,
++  Line,
++  LineChart,
+   Pie,
+   PieChart,
+   ResponsiveContainer,
+   Tooltip,
++  XAxis,
++  YAxis,
+ } from 'recharts';
+ import type {
+   DashboardStats,
+@@ -32,36 +38,50 @@ const chartData = (values: Record<string, number> = {}) =>
+     .slice(0, 6)
+     .map(([name, value]) => ({ name, value }));
+ 
+-// The backend has no dedicated time-series endpoint for inspection volume.
+-// Rather than inventing numbers, this buckets the scan records the page has
+-// already fetched (via GET /scans) by their real `created_at` timestamp —
+-// a client-side aggregation of real records, not fabricated data.
++const ACTIVITY_DAYS = 14;
++
++// The backend has no dedicated time-series endpoint for inspection volume,
++// so this buckets the scan records already fetched (via GET /scans) by
++// their real `created_at` timestamp and real `overall_status` — a
++// client-side aggregation of real records, not fabricated data.
+ function buildActivitySeries(scans: ScanListItem[]) {
+   const today = new Date();
+   today.setHours(0, 0, 0, 0);
+-  const days = Array.from({ length: 7 }, (_, i) => {
++  const days = Array.from({ length: ACTIVITY_DAYS }, (_, i) => {
+     const d = new Date(today);
+-    d.setDate(d.getDate() - (6 - i));
+-    return { time: d.getTime(), label: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }), value: 0 };
++    d.setDate(d.getDate() - (ACTIVITY_DAYS - 1 - i));
++    return {
++      time: d.getTime(),
++      label: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }),
++      total: 0,
++      compliant: 0,
++      violations: 0,
++    };
+   });
+   scans.forEach((s) => {
+     const c = new Date(s.created_at);
+     c.setHours(0, 0, 0, 0);
+     const day = days.find((d) => d.time === c.getTime());
+-    if (day) day.value += 1;
++    if (!day) return;
++    day.total += 1;
++    if (s.overall_status === 'compliant') day.compliant += 1;
++    else if (s.overall_status === 'non-compliant') day.violations += 1;
+   });
+   return days;
+ }
+ 
+-function relativeTime(iso: string) {
+-  const diffMs = Date.now() - new Date(iso).getTime();
+-  const mins = Math.round(diffMs / 60000);
+-  if (mins < 1) return 'just now';
+-  if (mins < 60) return `${mins}m ago`;
+-  const hours = Math.round(mins / 60);
+-  if (hours < 24) return `${hours}h ago`;
+-  const days = Math.round(hours / 24);
+-  return `${days}d ago`;
++// Real count of scans from the 7 days before the visible window, from the
++// same fetched list — used only for a genuine week-over-week comparison on
++// the Total Scans KPI (no invented trend).
++function previousWindowCount(scans: ScanListItem[]) {
++  const today = new Date();
++  today.setHours(0, 0, 0, 0);
++  return scans.filter((s) => {
++    const c = new Date(s.created_at);
++    c.setHours(0, 0, 0, 0);
++    const diffDays = Math.round((today.getTime() - c.getTime()) / 86400000);
++    return diffDays >= 7 && diffDays <= 13;
++  }).length;
+ }
+ 
+ export default function Dashboard({
+@@ -86,12 +106,6 @@ export default function Dashboard({
+     [scans],
+   );
+ 
+-  const scanById = useMemo(() => {
+-    const map = new Map<number, ScanListItem>();
+-    scans.forEach((s) => map.set(s.scan_id, s));
+-    return map;
+-  }, [scans]);
+-
+   const filteredRecentScans = useMemo(() => {
+     return scans.filter((scan) => {
+       if (category && scan.category !== category) return false;
+@@ -166,21 +180,22 @@ export default function Dashboard({
+     : [];
+ 
+   const activity = useMemo(() => buildActivitySeries(scans), [scans]);
+-  const activityTotal = activity.reduce((sum, d) => sum + d.value, 0);
++  const activityTotal = activity.reduce((sum, d) => sum + d.total, 0);
++  const activityPrev = useMemo(() => previousWindowCount(scans), [scans]);
++  const last7 = activity.slice(-7).reduce((sum, d) => sum + d.total, 0);
++  const scansTrend = activityPrev > 0 ? Math.round(((last7 - activityPrev) / activityPrev) * 100) : null;
+ 
+-  // Most recent scan across the loaded dataset — real, derived, used only as
+-  // a small subordinate "last activity" line rather than an invented feed.
+-  const lastScan = useMemo(() => {
+-    if (!scans.length) return null;
+-    return [...scans].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+-  }, [scans]);
+-
+-  const hasPriorityWork = review.length > 0 || priority.length > 0;
++  // Priority queue severity buckets, derived from the real priority_score
++  // the backend already returns for each non-compliant scan. Thresholds are
++  // a disclosed heuristic on real numbers — not a fabricated categorization.
++  const highPriority = priority.filter((p) => p.priority_score >= 7);
++  const mediumPriority = priority.filter((p) => p.priority_score >= 4 && p.priority_score < 7);
++  const lowPriority = priority.filter((p) => p.priority_score < 4);
+ 
+   return (
+     <Page
+       title="Dashboard"
+-      subtitle="Monitor compliance findings and prioritize cases requiring human attention."
++      subtitle="Monitor compliance findings, track inspections, and identify key risk areas."
+     >
+       <div className="toolbar dashboard-toolbar">
+         <div className="filter-group">
+@@ -207,93 +222,113 @@ export default function Dashboard({
+ 
+       {error && <div className="error-box">{error}</div>}
+ 
+-      <div className="stat-grid compact-stat-grid">
+-        <div className="stat-card">
+-          <div className="stat-icon" style={{ color: 'var(--muted)', background: 'var(--surface-soft)' }}>▤</div>
+-          <div><span>Total scans</span><strong>{stats?.total_scans ?? '—'}</strong></div>
++      {/* ---- KPI summary ---- */}
++      <div className="stat-grid kpi-grid">
++        <div className="stat-card kpi-card kpi-neutral">
++          <div className="stat-icon">▤</div>
++          <div>
++            <span>Total scans</span>
++            <strong>{stats?.total_scans ?? '—'}</strong>
++            {scansTrend !== null && <small className={scansTrend >= 0 ? 'trend-up' : 'trend-down'}>{scansTrend >= 0 ? '↑' : '↓'} {Math.abs(scansTrend)}% vs previous 7 days</small>}
++          </div>
+         </div>
+-        <div className="stat-card">
+-          <div className="stat-icon" style={{ color: 'var(--green)', background: 'var(--green-bg)' }}>✓</div>
++        <div className="stat-card kpi-card kpi-good">
++          <div className="stat-icon">✓</div>
+           <div>
+-            <span>Compliant</span><strong>{stats?.compliant_count ?? '—'}</strong>
++            <span>Compliant</span>
++            <strong>{stats?.compliant_count ?? '—'}</strong>
+             {!!stats?.total_scans && <small>{pct(stats.compliant_count, stats.total_scans)}% of total</small>}
+           </div>
+         </div>
+-        <div className="stat-card">
+-          <div className="stat-icon" style={{ color: 'var(--red)', background: 'var(--red-bg)' }}>!</div>
++        <div className="stat-card kpi-card kpi-bad">
++          <div className="stat-icon">!</div>
+           <div>
+-            <span>Violations</span><strong>{stats?.non_compliant_count ?? '—'}</strong>
++            <span>Violations</span>
++            <strong>{stats?.non_compliant_count ?? '—'}</strong>
+             {!!stats?.total_scans && <small>{pct(stats.non_compliant_count, stats.total_scans)}% of total</small>}
+           </div>
+         </div>
+-        <div className="stat-card">
+-          <div className="stat-icon" style={{ color: 'var(--amber)', background: 'var(--amber-bg)' }}>◔</div>
++        <div className="stat-card kpi-card kpi-warn">
++          <div className="stat-icon">◔</div>
+           <div>
+-            <span>Review needed</span><strong>{stats?.human_review_count ?? '—'}</strong>
++            <span>Review required</span>
++            <strong>{stats?.human_review_count ?? '—'}</strong>
+             {!!stats?.total_scans && <small>{pct(stats.human_review_count, stats.total_scans)}% of total</small>}
+           </div>
+         </div>
+       </div>
+ 
+-      {/* ---- Inspection priority: the dominant operational section ---- */}
+-      <div className="panel priority-console">
+-        <div className="panel-header">
+-          <div><span className="section-eyebrow">Operational queue</span><h3>Inspection priority</h3></div>
+-          <span className="count">{review.length + priority.length}</span>
+-        </div>
+-        {hasPriorityWork ? (
+-          <div className="priority-list">
+-            {review.slice(0, 4).map((r) => {
+-              const detail = scanById.get(r.scan_id);
+-              return (
+-                <div className="priority-row" key={`rv-${r.scan_id}`} onClick={() => goToScan(r.scan_id)}>
+-                  <span className="status warn">Review</span>
+-                  <div className="priority-main">
+-                    <strong>{r.product_name || detail?.product_name || 'Unnamed product'}</strong>
+-                    <small>{detail?.category || 'Uncategorized'} · {detail ? `${detail.violations} failed check${detail.violations === 1 ? '' : 's'}` : r.reason}</small>
+-                  </div>
+-                  <span className="priority-reason">{r.reason}</span>
+-                  <span className="priority-metric">{r.confidence}</span>
+-                </div>
+-              );
+-            })}
+-            {priority.slice(0, 4).map((p) => {
+-              const detail = scanById.get(p.scan_id);
+-              return (
+-                <div className="priority-row" key={`pr-${p.scan_id}`} onClick={() => goToScan(p.scan_id)}>
+-                  <span className="status bad">Violation</span>
+-                  <div className="priority-main">
+-                    <strong>{p.product_name || detail?.product_name || 'Unnamed product'}</strong>
+-                    <small>{detail?.category || 'Uncategorized'} · {detail ? `${detail.violations} failed check${detail.violations === 1 ? '' : 's'}` : p.reason}</small>
+-                  </div>
+-                  <span className="priority-reason">{p.reason}</span>
+-                  <span className="priority-metric">score {p.priority_score}</span>
+-                </div>
+-              );
+-            })}
++      {/* ---- Primary analytics: trend + compliance distribution ---- */}
++      <div className="primary-analytics-grid">
++        <div className="panel chart-panel activity-panel-lg">
++          <div className="panel-header">
++            <div><h3>Inspection activity</h3><p className="muted">Last {ACTIVITY_DAYS} days, aggregated from your scan records.</p></div>
++          </div>
++          <div className="chart-box chart-box-lg">
++            {activityTotal ? (
++              <ResponsiveContainer width="100%" height="100%">
++                <LineChart data={activity} margin={{ top: 4, right: 16, left: -10, bottom: 0 }}>
++                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--line-soft)" />
++                  <XAxis dataKey="label" tick={{ fontSize: 10.5 }} interval={Math.ceil(ACTIVITY_DAYS / 8)} />
++                  <YAxis allowDecimals={false} tick={{ fontSize: 10.5 }} width={28} />
++                  <Tooltip />
++                  <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
++                  <Line type="monotone" dataKey="total" name="Total scans" stroke="#3d4630" strokeWidth={2} dot={false} />
++                  <Line type="monotone" dataKey="compliant" name="Compliant" stroke="#4a7a56" strokeWidth={2} dot={false} />
++                  <Line type="monotone" dataKey="violations" name="Violations" stroke="#a65650" strokeWidth={2} dot={false} />
++                </LineChart>
++              </ResponsiveContainer>
++            ) : (
++              <div className="empty-chart">No scans recorded in the last {ACTIVITY_DAYS} days.</div>
++            )}
+           </div>
+-        ) : (
+-          <p className="muted">No inspections currently require manual review or elevated priority.</p>
+-        )}
++        </div>
++
++        <div className="panel chart-panel compliance-panel-lg">
++          <div className="panel-header"><div><h3>Compliance distribution</h3><p className="muted">Outcome of the selected scans.</p></div></div>
++          {stats?.total_scans ? (
++            <div className="donut-block">
++              <div className="donut-center-wrap">
++                <ResponsiveContainer width={148} height={148}>
++                  <PieChart>
++                    <Pie data={complianceData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={68} paddingAngle={2}>
++                      {complianceData.map((entry) => <Cell key={entry.name} className={entry.name === 'Compliant' ? 'slice-good' : 'slice-bad'} />)}
++                    </Pie>
++                    <Tooltip />
++                  </PieChart>
++                </ResponsiveContainer>
++                <div className="donut-center-label"><strong>{stats.compliance_rate}%</strong><span>Compliant</span></div>
++              </div>
++              <div className="donut-legend legend-table">
++                <div><i className="dot-good" /><span>Compliant</span><strong>{stats.compliant_count}</strong><em>{pct(stats.compliant_count, stats.total_scans)}%</em></div>
++                <div><i className="dot-bad" /><span>Non-compliant</span><strong>{stats.non_compliant_count}</strong><em>{pct(stats.non_compliant_count, stats.total_scans)}%</em></div>
++                <div><i className="dot-warn" /><span>Review required</span><strong>{stats.human_review_count}</strong><em>{pct(stats.human_review_count, stats.total_scans)}%</em></div>
++              </div>
++            </div>
++          ) : (
++            <div className="empty-chart">No scans in this selection.</div>
++          )}
++        </div>
+       </div>
+ 
+-      {/* ---- Recent inspections (primary) + compact analytics rail ---- */}
++      {/* ---- Operational information: recent inspections + priority ---- */}
+       <div className="console-grid">
+         <div className="panel">
+           <div className="panel-header">
+-            <div><span className="section-eyebrow">Activity log</span><h3>Recent inspections</h3></div>
++            <div><h3>Recent inspections</h3><p className="muted">Latest scans from your activity.</p></div>
+             <button className="text-button" onClick={() => navigate('products')}>View all →</button>
+           </div>
+           <div className="table-wrap compact-table">
+             <table>
+-              <thead><tr><th>Scan ID</th><th>Product</th><th>Category</th><th>Result</th><th>Date</th><th>Action</th></tr></thead>
++              <thead><tr><th>Scan ID</th><th>Product</th><th>Brand</th><th>Result</th><th>Issues</th><th>Date</th><th>Actions</th></tr></thead>
+               <tbody>
+                 {filteredRecentScans.slice(0, 8).map((s) => (
+                   <tr key={s.scan_id} onClick={() => goToScan(s.scan_id)}>
+                     <td>#{s.scan_id}</td>
+                     <td><strong>{s.product_name || 'Unnamed product'}</strong></td>
+-                    <td>{s.category || '—'}</td>
++                    <td>{s.brand || '—'}</td>
+                     <td><span className={`status ${s.overall_status === 'compliant' ? 'good' : s.overall_status === 'non-compliant' ? 'bad' : 'neutral'}`}>{fmt(s.overall_status)}</span></td>
++                    <td>{s.overall_status === 'compliant' ? '—' : s.violations}</td>
+                     <td>{new Date(s.created_at).toLocaleDateString()}</td>
+                     <td className="row-actions" onClick={(e) => e.stopPropagation()}>
+                       <button className="icon-action" title="View result" onClick={() => goToScan(s.scan_id)}>view</button>
+@@ -309,100 +344,114 @@ export default function Dashboard({
+                     </td>
+                   </tr>
+                 ))}
+-                {!filteredRecentScans.length && <tr><td colSpan={6} className="empty-table">No scans match the current filters.</td></tr>}
++                {!filteredRecentScans.length && <tr><td colSpan={7} className="empty-table">No scans match the current filters.</td></tr>}
+               </tbody>
+             </table>
+           </div>
+         </div>
+ 
+-        <div className="side-stack analytics-rail">
+-          <div className="panel compact-panel">
+-            <div className="panel-header"><span className="section-eyebrow">Distribution</span></div>
+-            {stats?.total_scans ? (
+-              <div className="mix-row">
+-                <ResponsiveContainer width={84} height={84}>
+-                  <PieChart>
+-                    <Pie data={complianceData} dataKey="value" nameKey="name" innerRadius={26} outerRadius={40} paddingAngle={2}>
+-                      {complianceData.map((entry) => <Cell key={entry.name} className={entry.name === 'Compliant' ? 'slice-good' : 'slice-bad'} />)}
+-                    </Pie>
+-                    <Tooltip />
+-                  </PieChart>
+-                </ResponsiveContainer>
+-                <div className="donut-legend">
+-                  <div><i className="dot-good" /><span>Compliant</span><strong>{pct(stats.compliant_count, stats.total_scans)}%</strong></div>
+-                  <div><i className="dot-bad" /><span>Non-compliant</span><strong>{pct(stats.non_compliant_count, stats.total_scans)}%</strong></div>
+-                  <div><i className="dot-warn" /><span>Needs review</span><strong>{pct(stats.human_review_count, stats.total_scans)}%</strong></div>
+-                </div>
+-              </div>
+-            ) : <p className="muted">No scans in this selection.</p>}
+-          </div>
+-
+-          <div className="panel compact-panel">
+-            <div className="panel-header"><span className="section-eyebrow">Category</span></div>
+-            {categoryData.length ? (
+-              <div className="bars compact-bars">
+-                {categoryData.map((row) => (
+-                  <div className="bar-row" key={row.name}>
+-                    <span>{row.name}</span>
+-                    <div><i style={{ width: `${pct(row.value, categoryData[0].value)}%` }} /></div>
+-                    <span>{row.value}</span>
+-                  </div>
+-                ))}
++        <div className="panel priority-panel">
++          <div className="panel-header"><h3>Inspection priority</h3></div>
++          <div className="severity-rows">
++            <div className="severity-row">
++              <span className="status bad">High</span>
++              <div><strong>{highPriority.length}</strong><small>Immediate attention required</small></div>
++            </div>
++            <div className="severity-row">
++              <span className="status warn">Medium</span>
++              <div><strong>{mediumPriority.length}</strong><small>Should be reviewed soon</small></div>
++            </div>
++            <div className="severity-row">
++              <span className="status neutral">Low</span>
++              <div><strong>{lowPriority.length}</strong><small>For reference</small></div>
++            </div>
++            <div className="severity-row review-row">
++              <span className="status warn">Review</span>
++              <div>
++                <strong>{stats?.human_review_count ?? review.length}</strong>
++                <small>{!!stats?.total_scans && `${pct(stats.human_review_count, stats.total_scans)}% of total scans`}</small>
+               </div>
+-            ) : <p className="muted">No category violations in this selection.</p>}
+-          </div>
+-
+-          <div className="panel compact-panel activity-note">
+-            <div className="panel-header"><span className="section-eyebrow">Last activity</span></div>
+-            {lastScan ? (
+-              <p className="muted">
+-                Scan #{lastScan.scan_id} ({lastScan.product_name || 'Unnamed product'}) recorded {relativeTime(lastScan.created_at)}.
+-                {activityTotal ? ` ${activityTotal} inspection${activityTotal === 1 ? '' : 's'} in the last 7 days.` : ''}
+-              </p>
+-            ) : <p className="muted">No inspections recorded yet.</p>}
++            </div>
+           </div>
++          {(review.length > 0 || priority.length > 0) && (
++            <div className="priority-list-compact">
++              {review.slice(0, 3).map((r) => (
++                <div className="priority-row-compact" key={`rv-${r.scan_id}`} onClick={() => goToScan(r.scan_id)}>
++                  <strong>#{r.scan_id} · {r.product_name || 'Unnamed'}</strong>
++                  <span>{r.reason}</span>
++                </div>
++              ))}
++              {priority.slice(0, 3).map((p) => (
++                <div className="priority-row-compact" key={`pr-${p.scan_id}`} onClick={() => goToScan(p.scan_id)}>
++                  <strong>#{p.scan_id} · {p.product_name || 'Unnamed'}</strong>
++                  <span>score {p.priority_score} · {p.reason}</span>
++                </div>
++              ))}
++            </div>
++          )}
++          {!review.length && !priority.length && <p className="muted">No inspections currently require manual review or elevated priority.</p>}
+         </div>
+       </div>
+ 
+-      {/* ---- Secondary breakdowns: de-emphasized, smaller ---- */}
+-      {(brandData.length > 0 || regionData.length > 0 || !!topClause?.value) && (
+-        <div className="breakdown-grid secondary-breakdowns">
+-          {brandData.length > 0 && (
+-            <div className="panel compact-panel">
+-              <div className="panel-header"><span className="section-eyebrow">Brand</span></div>
+-              <div className="bars compact-bars">
+-                {brandData.map((row) => (
+-                  <div className="bar-row" key={row.name}>
+-                    <span>{row.name}</span>
+-                    <div><i style={{ width: `${pct(row.value, brandData[0].value)}%` }} /></div>
+-                    <span>{row.value}</span>
+-                  </div>
+-                ))}
+-              </div>
++      {/* ---- Secondary analytics: category / brand / region / clause ---- */}
++      <div className="breakdown-grid">
++        <div className="panel compact-panel">
++          <div className="panel-header"><h3>Violations by category</h3></div>
++          {categoryData.length ? (
++            <div className="bars compact-bars">
++              {categoryData.map((row) => (
++                <div className="bar-row" key={row.name}>
++                  <span>{row.name}</span>
++                  <div><i style={{ width: `${pct(row.value, categoryData[0].value)}%` }} /></div>
++                  <span>{row.value}</span>
++                </div>
++              ))}
+             </div>
+-          )}
+-          {regionData.length > 0 && (
+-            <div className="panel compact-panel">
+-              <div className="panel-header"><span className="section-eyebrow">Region</span></div>
+-              <div className="bars compact-bars">
+-                {regionData.map((row) => (
+-                  <div className="bar-row" key={row.name}>
+-                    <span>{row.name}</span>
+-                    <div><i style={{ width: `${pct(row.value, regionData[0].value)}%` }} /></div>
+-                    <span>{row.value}</span>
+-                  </div>
+-                ))}
+-              </div>
++          ) : <p className="muted">No category violations in this selection.</p>}
++        </div>
++        <div className="panel compact-panel">
++          <div className="panel-header"><h3>Violations by brand</h3></div>
++          {brandData.length ? (
++            <div className="bars compact-bars">
++              {brandData.map((row) => (
++                <div className="bar-row" key={row.name}>
++                  <span>{row.name}</span>
++                  <div><i style={{ width: `${pct(row.value, brandData[0].value)}%` }} /></div>
++                  <span>{row.value}</span>
++                </div>
++              ))}
+             </div>
+-          )}
+-          {!!topClause?.value && (
+-            <div className="panel compact-panel">
+-              <div className="panel-header"><span className="section-eyebrow">Most-violated clause</span></div>
+-              <p className="muted">{topClause.name} — {topClause.value} failure{topClause.value === 1 ? '' : 's'} in this selection.</p>
++          ) : <p className="muted">No brand violations in this selection.</p>}
++        </div>
++        <div className="panel compact-panel">
++          <div className="panel-header"><h3>Violations by region</h3></div>
++          {regionData.length ? (
++            <div className="bars compact-bars">
++              {regionData.map((row) => (
++                <div className="bar-row" key={row.name}>
++                  <span>{row.name}</span>
++                  <div><i style={{ width: `${pct(row.value, regionData[0].value)}%` }} /></div>
++                  <span>{row.value}</span>
++                </div>
++              ))}
+             </div>
+-          )}
++          ) : <p className="muted">No regional violations in this selection.</p>}
+         </div>
+-      )}
++        <div className="panel compact-panel">
++          <div className="panel-header"><h3>Most-violated clause</h3></div>
++          {clauseData.length && topClause?.value ? (
++            <div className="bars compact-bars">
++              {clauseData.map((row) => (
++                <div className="bar-row" key={row.name}>
++                  <span>{row.name}</span>
++                  <div><i style={{ width: `${pct(row.value, clauseData[0].value)}%` }} /></div>
++                  <span>{row.value}</span>
++                </div>
++              ))}
++            </div>
++          ) : <p className="muted">No clause violations in this selection.</p>}
++        </div>
++      </div>
+ 
+       {loading && <div className="dashboard-loading">Refreshing dashboard data…</div>}
+     </Page>
+diff --git a/Labelix Frontend/src/index.css b/Labelix Frontend/src/index.css
+index 8ba7448..0929bc7 100644
+--- a/Labelix Frontend/src/index.css	
++++ b/Labelix Frontend/src/index.css	
+@@ -131,65 +131,88 @@ body{background:var(--bg);color:var(--ink)}
+   .top-bar{display:none}
+ }
+ 
++
+ /* ======================================================================
+-   DASHBOARD / OVERVIEW REDESIGN — additive, reuses shell tokens above
++   DASHBOARD FINAL REFINEMENT — analytics-rich operations layout
++   (replaces the previous, over-simplified Dashboard CSS block; still
++   builds only on the shell tokens defined above)
+    ====================================================================== */
+ 
+-.compact-stat-grid{grid-template-columns:repeat(4,1fr)}
+-.compact-stat-grid .stat-card{display:flex;align-items:center;gap:12px;padding:14px 16px}
+-.stat-icon{width:34px;height:34px;border-radius:var(--radius-sm);display:grid;place-items:center;font-size:15px;flex:none}
+-.compact-stat-grid .stat-card span{font-size:11px;color:var(--muted)}
+-.compact-stat-grid .stat-card strong{font-size:20px;margin-top:2px}
+-.compact-stat-grid .stat-card small{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}
+-
+-.section-eyebrow{display:block;font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+-
+-/* ---- inspection priority: the dominant operational section ---- */
+-.priority-console{margin-bottom:16px}
+-.priority-list{display:flex;flex-direction:column}
+-.priority-row{display:grid;grid-template-columns:88px 1.4fr 1fr auto;align-items:center;gap:14px;padding:9px 4px;border-top:1px solid var(--line-soft);cursor:pointer;font-size:12px}
+-.priority-list .priority-row:first-child{border-top:0}
+-.priority-row:hover{background:var(--surface-soft)}
+-.priority-main strong{display:block;font-size:12.5px}
+-.priority-main small{color:var(--muted);font-size:11px}
+-.priority-reason{color:var(--muted);font-size:11px}
+-.priority-metric{font:600 11px 'IBM Plex Mono',monospace;color:var(--ink);white-space:nowrap;text-align:right}
+-
+-/* ---- recent inspections (primary) + compact analytics rail ---- */
+-.console-grid{display:grid;grid-template-columns:1.9fr 1fr;gap:14px;align-items:start}
+-.compact-table th,.compact-table td{padding:7px 10px;font-size:12px}
+-.analytics-rail{gap:12px}
+-.compact-panel{padding:13px 15px}
+-.compact-panel .panel-header{margin-bottom:8px}
+-.compact-bars{gap:8px}
+-.compact-bars .bar-row{grid-template-columns:80px 1fr 24px;font-size:10.5px}
+-.activity-note p{font-size:11.5px;line-height:1.5}
+-
+-.mix-row{display:flex;align-items:center;gap:14px}
+-.mix-row .donut-legend{flex:1;gap:6px}
+-.mix-row .donut-legend div{grid-template-columns:7px 1fr auto;font-size:10.5px}
+-.mix-row .donut-legend i{width:7px;height:7px;border-radius:50%}
++/* ---- KPI summary: compact, tinted by status ---- */
++.kpi-grid{grid-template-columns:repeat(4,1fr)}
++.kpi-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md)}
++.kpi-card .stat-icon{width:34px;height:34px;border-radius:var(--radius-sm);display:grid;place-items:center;font-size:15px;flex:none;background:#fff;border:1px solid var(--line)}
++.kpi-card span{font-size:11px;color:var(--muted)}
++.kpi-card strong{display:block;font-size:21px;margin-top:2px}
++.kpi-card small{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}
++.kpi-neutral{background:var(--surface-soft)}
++.kpi-good{background:var(--green-bg);border-color:transparent}
++.kpi-good .stat-icon{color:var(--green)}
++.kpi-bad{background:var(--red-bg);border-color:transparent}
++.kpi-bad .stat-icon{color:var(--red)}
++.kpi-warn{background:var(--amber-bg);border-color:transparent}
++.kpi-warn .stat-icon{color:var(--amber)}
++.trend-up{color:var(--green)}
++.trend-down{color:var(--red)}
++
++/* ---- primary analytics: trend chart + compliance distribution ---- */
++.primary-analytics-grid{display:grid;grid-template-columns:1.75fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch}
++.activity-panel-lg .chart-box-lg{height:300px}
++.compliance-panel-lg{display:flex;flex-direction:column}
++.donut-block{display:flex;flex-direction:column;align-items:center;gap:14px;flex:1;justify-content:center}
++.donut-center-wrap{position:relative;display:flex;align-items:center;justify-content:center}
++.donut-center-label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
++.donut-center-label strong{font-size:19px;line-height:1.1}
++.donut-center-label span{font-size:10px;color:var(--muted);margin-top:1px}
++.legend-table{width:100%;display:flex;flex-direction:column;gap:9px}
++.legend-table div{display:grid;grid-template-columns:8px 1fr auto auto;align-items:center;gap:8px;font-size:12px}
++.legend-table strong{font-size:12px}
++.legend-table em{font-style:normal;color:var(--muted);font-size:11px;min-width:32px;text-align:right}
+ .dot-good{background:var(--green)}
+ .dot-bad{background:var(--red)}
+ .dot-warn{background:var(--amber)}
+ .slice-good{fill:var(--green)}
+ .slice-bad{fill:var(--red)}
++.legend-table i,.donut-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+ 
+-.breakdown-grid{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:14px}
+-.secondary-breakdowns{grid-template-columns:repeat(3,1fr);opacity:.92}
+-.bar-row i{background:var(--accent)}
+-
++/* ---- operational information: recent inspections + priority ---- */
++.console-grid{display:grid;grid-template-columns:1.9fr 1fr;gap:14px;align-items:start;margin-bottom:14px}
++.compact-table th,.compact-table td{padding:7px 10px;font-size:12px}
+ .row-actions{display:flex;gap:6px}
+ .icon-action{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:var(--radius-sm);font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:4px 7px;font-family:'IBM Plex Mono',monospace}
+ .icon-action:hover{border-color:var(--accent);color:var(--accent-hover)}
+ 
++.priority-panel{display:flex;flex-direction:column;gap:12px}
++.severity-rows{display:flex;flex-direction:column}
++.severity-row{display:flex;align-items:center;gap:10px;padding:8px 2px;border-top:1px solid var(--line-soft)}
++.severity-rows .severity-row:first-child{border-top:0}
++.severity-row div{display:flex;align-items:baseline;justify-content:space-between;flex:1;gap:8px}
++.severity-row strong{font-size:14px}
++.severity-row small{color:var(--muted);font-size:10.5px;text-align:right}
++.severity-row.review-row{background:var(--amber-bg);border-radius:var(--radius-sm);border-top:0;margin-top:2px;padding:8px 8px}
++.priority-list-compact{border-top:1px solid var(--line-soft);padding-top:8px;display:flex;flex-direction:column;gap:2px}
++.priority-row-compact{display:flex;justify-content:space-between;gap:8px;padding:6px 2px;font-size:11px;cursor:pointer;border-radius:var(--radius-sm)}
++.priority-row-compact:hover{background:var(--surface-soft)}
++.priority-row-compact strong{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.priority-row-compact span{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++
++/* ---- secondary analytics: category / brand / region / clause ---- */
++.breakdown-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
++.compact-panel{padding:13px 15px}
++.compact-panel .panel-header{margin-bottom:8px}
++.compact-bars{gap:8px}
++.compact-bars .bar-row{grid-template-columns:76px 1fr 24px;font-size:10.5px}
++.bar-row i{background:var(--accent)}
++
++@media(max-width:1200px){
++  .breakdown-grid{grid-template-columns:1fr 1fr}
++}
+ @media(max-width:1100px){
++  .primary-analytics-grid{grid-template-columns:1fr}
+   .console-grid{grid-template-columns:1fr}
+-  .secondary-breakdowns{grid-template-columns:1fr 1fr}
+ }
+ @media(max-width:650px){
+-  .compact-stat-grid{grid-template-columns:1fr 1fr}
+-  .mix-row{flex-direction:column;align-items:flex-start}
+-  .priority-row{grid-template-columns:1fr;gap:4px}
+-  .secondary-breakdowns{grid-template-columns:1fr}
++  .kpi-grid{grid-template-columns:1fr 1fr}
++  .breakdown-grid{grid-template-columns:1fr}
++  .activity-panel-lg .chart-box-lg{height:220px}
+ }
