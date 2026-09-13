@@ -26,8 +26,7 @@ import importlib.util
 import pytesseract
 from typing import List
 
-
-pytesseract.pytesseract.tesseract_cmd = shutil.which("tesseract")
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 
 router = APIRouter()
@@ -340,3 +339,22 @@ def list_scans(
         )
 
     return response
+
+@router.delete("/scans/{scan_id}")
+def delete_scan(
+    scan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    if scan.user_id != current_user.id and current_user.role != "inspector":
+        raise HTTPException(status_code=403, detail="Not authorized to delete this scan")
+
+    db.delete(scan)
+    db.commit()
+
+    return {"message": f"Scan {scan_id} deleted"}
